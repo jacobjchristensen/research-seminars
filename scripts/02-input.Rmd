@@ -1,0 +1,555 @@
+---
+title: "Data input"
+subtitle: "NOMA intervention: Nightingale NMR metabolomics analyses"
+author: "Jacob J. Christensen"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+    toc_float: yes
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	eval = TRUE, 
+  echo = TRUE, 
+  message = TRUE, 
+  warning = FALSE, 
+	root.dir = normalizePath(".."), 
+	dev = c("png", "cairo_pdf"),
+	dpi = 300,
+  fig.show = "hold",
+	fig.align = "center",
+	fig.keep = "all",
+	fig.path = "../results/figures/02-input-"
+)
+```
+
+
+## Info
+
+In this file, I will *import* all raw data and prepare for downstream data *tidying*, *transformation*, *visualization*, *modeling* and *communication.* 
+
+
+## Load libraries
+
+First, we load necessary *libraries*.  
+
+```{r}
+library(tidyverse) # A whole bunch of packages necessary for data analysis
+library(readxl) # To load Excel files appropriately
+library(haven) # To load SPSS files appropriately
+```
+
+
+Next, we move on to load *data*. 
+
+## Clinical data
+
+### Data file
+
+```{r}
+# SPSS file
+data_clinic <- haven::read_sav(file = "../data/raw/noma_clinic.sav")
+
+# Excel file
+data_clinic <- readxl::read_xlsx(path = "../data/raw/noma_clinic.xlsx")
+
+# Text file (tab-delimited)
+data_clinic <- readr::read_delim(file = "../data/raw/noma_clinic.txt", delim = "\t", na = c("", "NA", "#NULL!"), locale = locale(decimal_mark = ",", encoding = "latin1"))
+
+# Text file (tab-delimited) -- shortcut
+data_clinic <- readr::read_tsv(file = "../data/raw/noma_clinic.txt", na = c("", "NA", "#NULL!"), locale = locale(decimal_mark = ",", encoding = "latin1"))
+
+# CSV file (comma-separated) -- shortcut
+data_clinic <- readr::read_csv(file = "../data/raw/noma_clinic.csv", na = c("", "NA", "#NULL!"), locale = locale(decimal_mark = ".", encoding = "latin1"))
+
+# Om this case, the direct SPSS load was superior
+data_clinic <- haven::read_sav(file = "../data/raw/noma_clinic.sav")
+
+# Look at the data
+data_clinic
+```
+
+Many ways to Rome, indeed. 
+
+This looks nice (especially the direct SPSS load), but some adjustments are still necessary. 
+
+1. R wants to work with *factors* for categorical variables. So for this particular SPSS file, we will change all *haven_labelled* variables to factors. 
+
+2. Specify what each factor level should be, and set the level order.
+
+
+```{r}
+data_clinic <- data_clinic %>% 
+  modify_if(haven::is.labelled, haven::as_factor, levels = "both") %>% 
+  mutate(
+    
+    # The group variable
+    group = case_when(
+      group == 0 ~ "control", 
+      group == 1 ~ "intervention", 
+      TRUE ~ NA_character_) %>% factor(levels = c("control", "intervention")), 
+    
+    # The gender variable
+    gender = case_when(
+      gender == "[2] kvinne" ~ "woman", 
+      gender == "[1] mann" ~ "man", 
+      TRUE ~ NA_character_) %>% factor(levels = c("woman", "man")), 
+    
+    # Hypertensive medication use
+    hypertensive_med = case_when(
+      hypertensive_med == 0 ~ "no", 
+      hypertensive_med == 1 ~ "yes", 
+      TRUE ~ NA_character_) %>% factor(levels = c("no", "yes")), 
+    
+    # Family history of myocardial infaction (before the age of 60 years)
+    myocardialinfarction = case_when(
+      myocardialinfarction == "[0] nei" ~ "no", 
+      myocardialinfarction == "[1] Ja" ~ "yes", 
+      myocardialinfarction == "[2] Vet ikke" ~ "unknown", 
+      myocardialinfarction == "3" ~ "unknown", 
+      TRUE ~ NA_character_) %>% factor(levels = c("no", "yes", "unknown")), 
+    
+    # Smoking status (multi-level)
+    smoking = case_when(
+      smoking == "[1] ja, regelmessig" ~ "regularly", 
+      smoking == "[2] ja, men sjelden" ~ "seldom", 
+      smoking == "[3] jeg har sluttet å røyke" ~ "quit", 
+      smoking == "[4] aldri røkt" ~ "never", 
+      smoking == "[5] bruker snus" ~ "snuff", 
+      TRUE ~ NA_character_) %>% factor(levels = c("regularly", "seldom", "quit", "never", "snuff")), 
+    
+    # Smoking status (dichotomous: 1 + 2 + 5, or 3 + 4)
+    smoking2 = case_when(
+      smoking2 == 0 ~ "no", 
+      smoking2 == 1 ~ "yes", 
+      TRUE ~ NA_character_) %>% factor(levels = c("no", "yes"))
+    )
+
+data_clinic
+```
+
+This looks much better. 
+
+Finally, remove the variables that we don't need, for example percentages and duplicate IDs. 
+
+```{r}
+data_clinic <- data_clinic %>% select(-matches("idmills|initials2|deltapercent_|deltaglucose_glucose"))
+```
+
+### Annotation file
+
+```{r}
+annotation_clinic <- read_xlsx(path = "../data/raw/annotation_clinic.xlsx")
+annotation_clinic
+```
+
+
+### Tidy & prep
+
+Right now, the data files are loaded, but they are not tidy -- We need to get the data files cleaned up before we can move on to explore further. 
+
+But what does *tidy* mean? 
+
+There are three interrelated rules which make a dataset tidy:
+
+1. Each variable must have its own column.
+2. Each observation must have its own row.
+3. Each value must have its own cell.
+
+Lets start with the clinical data. 
+
+First variables that matches the word 'base_', 'end_' or 'delta_':
+
+```{r}
+data_clinic_vars <- data_clinic %>% 
+  select(id, matches("base_|end_|delta_|deltapercent_"), -matches("date")) %>%
+  pivot_longer(-id, names_to = c("time", "variable"), names_sep = "_", values_to = "value") %>% 
+  pivot_wider(names_from = "variable", values_from = "value")
+
+data_clinic_vars
+```
+
+Then we do the 'date' variables:
+
+```{r}
+data_clinic_date <- data_clinic %>% 
+  select(id, matches("date")) %>% 
+  pivot_longer(-id, names_to = c("time", "variable"), names_sep = "_", values_to = "value") %>% 
+  pivot_wider(names_from = "variable", values_from = "value")
+
+data_clinic_date
+```
+
+Join these two tibbles. 
+
+```{r}
+data_clinic <- data_clinic_vars %>% 
+  left_join(data_clinic_date, by = c("id", "time")) %>%
+  left_join(select(data_clinic, -matches("base_|end_|delta_")), by = "id", "time") %>% 
+  select(id, initials, time, date, group:height, everything())
+
+data_clinic
+```
+
+
+
+
+## Nightingale data
+
+### Data file
+
+Load Nightingale data directly from the raw data file. 
+
+```{r}
+data_nightingale <- readxl::read_xlsx(
+  path = "../data/raw/noma-nightingale.xlsx", 
+  sheet = 1, 
+  skip = 11, 
+  na = c("Zero (0)", "NA", "TAG", "NDEF"), 
+  col_names = TRUE)
+
+data_nightingale
+```
+
+We didnt get the column names, as the column names were stored in *row 10* (and not *row 12*, which then automatically would have been set as column names). To get the column names, load the sheet again, but skip the first 9 rows, and then pull our the names/colnames. Finally, use this character string to set the names of the above-loaded Nightingale data frame. 
+
+```{r}
+colnames_nightingale <- readxl::read_xlsx(
+  path = "../data/raw/noma-nightingale.xlsx", 
+  sheet = 1, 
+  skip = 9, 
+  n_max = 1, 
+  col_names = TRUE) %>% 
+  names()
+
+# This is what the column names look like
+colnames_nightingale
+
+# Add to data frame
+data_nightingale <- data_nightingale %>% set_names(colnames_nightingale)
+
+data_nightingale
+```
+
+This looks much better. 
+
+Note also that there are a lot of zero's in the data frame. These are probably the largest VLDL particles and the specific lipid species. Nightingale has very sensitive instruments, but they obviously cannot measure a XXL-VLDL subclass measure to exactly zero. These should therefore be NA/missing. 
+
+```{r}
+data_nightingale %>% 
+  summarize_all(~sum(. == 0)) %>% 
+  pivot_longer(cols = names(.), names_to = "variable", values_to = "value") %>% 
+  arrange(desc(value))
+```
+
+Indeed. We will change these to missing/NA. 
+
+```{r}
+data_nightingale <- data_nightingale %>% 
+  mutate_at(vars(colnames_nightingale[-1]), ~na_if(x = ., y = 0))
+```
+
+
+### Annotation object
+
+To create the Nightingale annotation file, we pull out the few rows containing important annotation information, and use that as a starting point.
+
+```{r}
+annotation_nightingale <- readxl::read_xlsx(path = "../data/raw/noma-nightingale.xlsx", skip = 8, n_max = 3) %>% 
+  mutate(name.full = case_when(
+    `...1` == "sampleid" ~ "name.short", 
+    is.na(`...1`) ~ "unit", 
+    `...1` == "success %" ~ "success_%")) %>% 
+  select(name.full, everything(), -`...1`) %>% 
+  as.data.frame() %>% column_to_rownames(var = "name.full") %>% t() %>% 
+  as.data.frame() %>% rownames_to_column(var = "name.full") %>% as_tibble() %>% 
+  mutate_all(as.character) %>% 
+  mutate(`success_%` = as.numeric(`success_%`))
+
+annotation_nightingale
+```
+
+Good -- this is a nice starting point. 
+
+Next we subset and specify information from the existing variables, and create new annotation variables while at it. 
+
+```{r}
+annotation_nightingale <- annotation_nightingale %>%
+  mutate(
+    
+    # Group variables into'types'; important for faceting
+    type = case_when(
+      str_detect(name.short, pattern = "-P$") ~ "Particle concentration", 
+      str_detect(name.short, pattern = "-L$") ~ "Total lipids", 
+      str_detect(name.short, pattern = "-PL$|-PL_%$|TotPG|TG/PG") ~ "Phospholipids", 
+      str_detect(name.short, pattern = "-C$|-C_%$|EstC|FreeC") ~ "Cholesterol", 
+      str_detect(name.short, pattern = "-CE$|-CE_%$") ~ "Cholesterol esters", 
+      str_detect(name.short, pattern = "-FC$|-FC_%$") ~ "Free cholesterol", 
+      str_detect(name.short, pattern = "-TG$|-TG_%$") ~ "Triglycerides", 
+      str_detect(name.short, pattern = "-D$") ~ "Size", 
+      str_detect(name.short, pattern = "PC|SM|TotCho") ~ "Phospholipids", 
+      str_detect(name.short, pattern = "Apo") ~ "Apolipoproteins", 
+      str_detect(name.full, pattern = " acid|unsaturation") ~ "Fatty acids", 
+      str_detect(name.short, pattern = "Glc|Lac|Cit|^Ace$") ~ "Glucose metabolism", 
+      str_detect(name.short, pattern = "Ile|Leu|Val") ~ "AA, branched-chain", 
+      str_detect(name.short, pattern = "Phe|Tyr|His") ~ "AA, aromatic", 
+      str_detect(name.short, pattern = "Ala|Gln") ~ "AA, other", 
+      str_detect(name.short, pattern = "^AcAce$|bOHBut") ~ "Ketone bodies", 
+      str_detect(name.short, pattern = "Crea|Alb|Gp") ~ "Miscellaneous", 
+      TRUE ~ NA_character_
+      ) %>% 
+      
+      # Coerce to factor and set the levels (meaning: specify the order in which panels/facets should be displayed)
+      factor(levels = c(
+        "Particle concentration", 
+        "Apolipoproteins", 
+        "Size", 
+        "Total lipids", 
+        "Cholesterol", 
+        "Cholesterol esters", 
+        "Free cholesterol", 
+        "Triglycerides", 
+        "Phospholipids", 
+        "Fatty acids", 
+        "Glucose metabolism", 
+        "AA, branched-chain", 
+        "AA, aromatic", 
+        "AA, other", 
+        "Ketone bodies", 
+        "Miscellaneous")), 
+    
+    type.short = case_when(
+      type == "Particle concentration" ~ "Particles", 
+      type == "Apolipoproteins" ~ "Apos", 
+      type == "Size" ~ "Size", 
+      type == "Total lipids" ~ "Lipids", 
+      type == "Cholesterol" ~ "Chol", 
+      type == "Cholesterol esters" ~ "CEs", 
+      type == "Free cholesterol" ~ "FCs", 
+      type == "Triglycerides" ~ "TGs", 
+      type == "Phospholipids" ~ "PLs", 
+      type == "Fatty acids" ~ "FAs", 
+      type == "Glucose metabolism" ~ "Glucose", 
+      type == "AA, branched-chain" ~ "AA, br-ch", 
+      type == "AA, aromatic" ~ "AA, arom", 
+      type == "AA, other" ~ "AA, other", 
+      type == "Ketone bodies" ~ "Ketones", 
+      type == "Miscellaneous" ~ "Misc", 
+      TRUE ~ NA_character_
+      ) %>% 
+      factor(levels = c(
+        "Particles", "Apos", "Size", "Lipids", "Chol", "CEs", "FCs", "TGs", "PLs", 
+        "FAs", "Glucose", "AA, br-ch", "AA, arom", "AA, other", "Ketones", "Misc"
+      )), 
+    
+    # Pull out the subclass
+    class = case_when(
+      str_detect(name.short, pattern = "VLDL") ~ "VLDL", 
+      str_detect(name.short, pattern = "LDL") ~ "LDL", 
+      str_detect(name.short, pattern = "IDL") ~ "IDL", 
+      str_detect(name.short, pattern = "HDL") ~ "HDL", 
+      TRUE ~ NA_character_
+    ), 
+    
+    # Pull out the subclass size
+    size = case_when(
+      str_detect(name.short, pattern = "^XXL-") ~ "XXL", 
+      str_detect(name.short, pattern = "^XL-") ~ "XL", 
+      str_detect(name.short, pattern = "^L-") ~ "L", 
+      str_detect(name.short, pattern = "^M-") ~ "M", 
+      str_detect(name.short, pattern = "IDL") ~ "M", 
+      str_detect(name.short, pattern = "^S-") ~ "S", 
+      str_detect(name.short, pattern = "^XS-") ~ "XS", 
+      str_detect(name.short, pattern = "^XXS-") ~ "XXS", 
+      TRUE ~ NA_character_
+    ), 
+    
+    # Create a 'lipid class' variable
+    lipid.subclasses = case_when(
+      !is.na(size) | class == "IDL" ~ "yes", 
+      TRUE ~ "no"
+    ), 
+    
+    # Create a 'pretty' variable
+    name.pretty = case_when(
+      class == "IDL" ~ "IDL", 
+      !is.na(class) & !is.na(size) ~ paste0(size, "-", class), 
+      type == "Size" ~ class, 
+      type == "Cholesterol" & is.na(size) ~ name.short, 
+      type == "Triglycerides" & is.na(size) ~ name.short, 
+      type == "Phospholipids" & is.na(size) ~ name.short, 
+      type == "Apolipoproteins" & is.na(size) ~ name.short, 
+      type == "Fatty acids" & is.na(size) ~ name.short, 
+      type == "Glucose metabolism" & is.na(size) ~ name.full, 
+      type == "AA, other" & is.na(size) ~ name.full, 
+      type == "AA, aromatic" & is.na(size) ~ name.full, 
+      type == "AA, branched-chain" & is.na(size) ~ name.full, 
+      type == "Ketone bodies" & is.na(size) ~ name.full, 
+      name.short == "Gp" ~ "Gp-acetyls", 
+      type == "Miscellaneous" & is.na(size) ~ name.full, 
+      TRUE ~ NA_character_
+      ), 
+    
+    name.pretty.unit = case_when(
+      class == "IDL" ~ paste0("IDL", " (", unit, ")"), 
+      !is.na(class) & !is.na(size) ~ paste0(size, "-", class, " (", unit, ")"), 
+      type == "Size" ~ paste0(class, " (", unit, ")"), 
+      type == "Cholesterol" & is.na(size) ~ paste0(name.short, " (", unit, ")"), 
+      type == "Triglycerides" & is.na(size) ~ paste0(name.short, " (", unit, ")"), 
+      type == "Phospholipids" & is.na(size) ~ paste0(name.short, " (", unit, ")"), 
+      type == "Apolipoproteins" & is.na(size) ~ paste0(name.short, " (", unit, ")"), 
+      type == "Fatty acids" & is.na(size) ~ paste0(name.short, " (", unit, ")"), 
+      type == "Glucose metabolism" & is.na(size) ~ paste0(name.full, " (", unit, ")"), 
+      type == "AA, other" & is.na(size) ~ paste0(name.full, " (", unit, ")"), 
+      type == "AA, aromatic" & is.na(size) ~ paste0(name.full, " (", unit, ")"), 
+      type == "AA, branched-chain" & is.na(size) ~ paste0(name.full, " (", unit, ")"), 
+      type == "Ketone bodies" & is.na(size) ~ paste0(name.full, " (", unit, ")"), 
+      name.short == "Gp" ~ paste0("Gp-acetyls", " (", unit, ")"), 
+      type == "Miscellaneous" & is.na(size) ~ paste0(name.full, " (", unit, ")"), 
+      TRUE ~ NA_character_
+      ), 
+    
+    # Change unit NAs to 'ratio'
+    unit = case_when(is.na(unit) ~ "ratio", TRUE ~ unit), 
+    
+    # This is the general variable order; any changes can be made using fct_relevel
+    name.order = row_number()
+  )
+
+annotation_nightingale
+```
+
+Great stuff!
+
+
+### Tidy & prep
+
+```{r}
+data_nightingale <- data_nightingale %>% 
+  separate(sampleid, into = c("oslo", "noma.id", "id_time"), sep = "_") %>% 
+  separate(id_time, into = c("id", "time"), sep = "-") %>% 
+  mutate(
+    time = case_when(
+      time == "V0" ~ "base", 
+      time == "V4" ~ "end", 
+      TRUE ~ NA_character_) %>% 
+        factor(levels = c("base", "end")), 
+    id = as.numeric(id)) %>% 
+  select(-oslo, -noma.id)
+
+data_nightingale
+```
+
+This looks very nice. The tibble is ready to join with the clinical data. But first, let's calculate the delta/change value for each variable, for each participant.
+
+
+### Calculate delta
+
+```{r}
+data_nightingale <- data_nightingale %>% 
+  pivot_longer(-c(id, time), names_to = "variables", values_to = "value") %>% 
+  pivot_wider(names_from = "time", values_from = "value") %>% 
+  mutate(delta = end - base) %>% 
+  pivot_longer(-c(id, variables), names_to = "time", values_to = "value") %>% 
+  pivot_wider(names_from = "variables", values_from = "value")
+
+data_nightingale
+```
+
+Well, that was easy!
+
+
+## Join
+
+Finally, we are ready to do the full join of clinical data and Nightingale data. 
+
+```{r}
+data_comb <- left_join(data_clinic, data_nightingale, by = c("id", "time"))
+```
+
+## Misc
+
+### Baseline clinical data
+
+Prepare a smaller data frame with only baseline values, to be used in the `01-basics` script. 
+
+```{r}
+data_noma <- data_clinic %>% 
+  filter(time == "base") %>% 
+  mutate(overweight = if_else(bmi > 25, true = "Overweight", "Not overweight")) %>% 
+  select(-time)
+```
+
+
+
+### Variable vector list
+
+Prepare some variable vectors that might come in handy later on. Put all vectors in a list for each of access. 
+
+```{r}
+drop <- c("id", "initials", "time", "date", "group")
+variables <- list(
+  "clinic" = data_clinic %>% select(-one_of(drop)) %>% names(), 
+  "clinic_num" = data_clinic %>% select(-one_of(drop)) %>% select_if(is.numeric) %>% names(), 
+  "clinic_fac" = data_clinic %>% select(-one_of(drop)) %>% select_if(is.factor) %>% names(), 
+  "nightingale" = data_nightingale %>% select(-one_of(drop)) %>% names()
+  )
+
+variables
+```
+
+### Annotation list
+
+Before saving the annotation files, put them in a list for ease of access.
+
+```{r}
+annotation <- list(
+  "clinic" = annotation_clinic, 
+  "nightingale" = annotation_nightingale
+)
+```
+
+
+
+## Conclusions and take-homes
+
+- Use *English language*! 
+- If you have data stored in an SPSS file, load that file *directly* into R; they contain a lot of useful information
+- Alternatively, load combinations of 1) *data* and 2) *variable information*
+- Create your study database in Excel or similar
+- You always need a properly formatted *annotation file*, or learn to use the R tools to extract meaningful annotation from structured data
+- Work in a consistent/structured manner; the annotation file from Nightingale was a good example of why that is the case
+
+
+
+
+## Save
+
+Here we save those files that we will use in downstream work. 
+
+```{r}
+saveRDS(variables, file = "../data/processed/variables.rds")
+saveRDS(annotation, file = "../data/processed/annotation.rds")
+saveRDS(data_noma, file = "../data/processed/data_noma.rds")
+saveRDS(data_clinic, file = "../data/processed/data_clinic.rds")
+saveRDS(data_nightingale, file = "../data/processed/data_nightingale.rds")
+saveRDS(data_comb, file = "../data/processed/data_comb.rds")
+
+openxlsx::write.xlsx(annotation, file = "../data/processed/annotation.xlsx")
+```
+
+
+
+## Session info
+
+To improve reproducibility, print out the session info for this script. 
+
+```{r}
+devtools::session_info()
+```
+

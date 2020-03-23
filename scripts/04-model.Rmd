@@ -1,0 +1,712 @@
+---
+title: "Data modeling"
+subtitle: "NOMA intervention: Nightingale NMR metabolomics analyses"
+author: "Jacob J. Christensen"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+    toc_float: yes
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	eval = TRUE, 
+  echo = TRUE, 
+  message = TRUE, 
+  warning = FALSE, 
+	root.dir = normalizePath(".."),
+	dev = c("png", "cairo_pdf"), 
+	dpi = 300, 
+  fig.show = "hold", 
+	fig.align = "center", 
+	fig.keep = "all", 
+	fig.path = "../results/figures/04-model-"
+)
+```
+
+
+## Info
+
+In this file, I will run linear regression analyses. 
+
+
+## Load libraries
+
+First, we load necessary *libraries*.  
+
+```{r}
+library(tidyverse) # A whole bunch of packages necessary for data analysis
+library(broom) # To effectively clean up model objects
+```
+
+## Data
+
+Load *data* from the previous step. 
+
+```{r}
+variables <- readRDS(file = "../data/processed/variables.rds")
+annotation <- readRDS(file = "../data/processed/annotation.rds")
+data_comb <- readRDS(file = "../data/processed/data_comb.rds")
+```
+
+
+## Model strategy
+
+*What kind of model strategy will we use?* There are many options. 
+
+First of all, what is the *outcome of interest*? 
+
+1. Baseline difference between randomized groups
+
+- "Standard cross-sectional analysis"
+
+2. End-of-study difference between randomized groups
+
+3. Within-group change from baseline
+
+4. Between-group change from baseline
+
+
+*Comments*:
+
+- We used between-group change as our main exposure; however, reviewers requested that we do a within-group change as well. The latter was presented in supplementary material, and generally shows the same pattern as the main results. 
+- A note on use of *change*: [Harrell](http://hbiostat.org/doc/bbr.pdf) recommends to **avoid the use of change from baseline**, for a variety of reasons. 
+
+> The correct way to analyze data in a parallel-group randomized clinical trial is to analyze the end-of-study difference between groups, adjusted for necessary covariates AND baseline value.
+>
+> - Frank Harrell
+
+- We will take Harrells advice at face value, and analyze the following estimates: 
+
+$Y = \alpha + \beta_1 * T + \beta_2 * Y_0$
+
+Where $T$ is treatment, $Y$ is the variable value at end-of-study, $Y_0$ is the variable value at baseline, $\alpha$ is the intercept, and $\beta_1$ and $\beta_2$ are the regression coefficients for treatment and variable value at baseline, respectively. 
+
+
+
+Next, we need to decide on *type of model*: 
+
+1. Univariate analyses
+
+- Linear regression (>200 tests)
+- Multiple testing adjustment:
+  - Bonferroni correction for total number of tests
+  - Bonferroni correction for number of principal components that explain a large proportion of variance
+  - False discovery rate (FDR)
+
+2. Multivariate analyses
+
+- Cluster analysis and multivariate ANOVA (MANOVA)
+- Principal component regression (PCR)
+- Partial least-squares discriminant analysis (PLSDA)
+
+
+*Comments*:
+
+- The most obvious strategy is option 1. In many of Würtz and co-workers papers, they use the Bonferroni correction with ~20 PCs, as this explains a large proportion of the variance in the data. We chose to do the FDR adjustment in *Ulven AJCN 2019*. 
+- Due to high correlation between a large number of outcomes, some kind of (correlation-based) dimension reduction method might be used in (or prior to) modeling. This is exactly what option 2 offers. The reviewers requested that we do some multivariate analyses to strengthen our initial results, and suggested clustering plus MANOVA. We performed both the MANOVA and and PLSDA, and presented results from the PLSDA in the final paper. 
+
+
+However, here we will go through ordinary linear regression, as this setup is pretty useful for most studies and situations. The general strategy can be extended to other situations, once we know the basics. 
+
+
+## Model definitions
+
+It's imperative to have a thorough understanding of the model definitions. Draw up DAGs, and visualize the connections between different variables. At least you need to define: 
+
+- Exposure
+- Outcome
+- Confounders
+- Competing exposures
+
+If you use a tool such as [DAGitty](http://dagitty.net/), then you can get minimal sufficient adjustment set for either the *total* or *direct* effect of the exposure on the outcome. 
+
+
+
+## Preparations
+
+### Filter and combine
+
+Subset the covariates from baseline. Since there was a slight weight loss in the intervention group, we need to take this into account; therefore, subset the change in weight and add that to the covariate data frame. 
+
+```{r}
+data_covariates <- data_comb %>% 
+  filter(time == "base") %>% 
+  select(id, group, age, gender, bmi, hypertensive_med, myocardialinfarction, smoking2, ldlc) %>% 
+  left_join(
+    data_comb %>% filter(time == "delta") %>% select(id, group, weight), 
+    by = c("id", "group"))
+
+data_covariates
+```
+
+Next, prepare the data frame with baseline and end-of-study values in wide format. 
+
+```{r}
+# Baseline Nightingale variables
+data_base <- data_comb %>% 
+  filter(time == "base") %>% 
+  select(id, group, variables$nightingale)
+
+# End-of-study Nightingale variables
+data_end <- data_comb %>% 
+  filter(time == "end") %>% 
+  select(id, group, variables$nightingale)
+
+# Join to a wide format
+data_wide <- left_join(
+  data_end, 
+  data_base, 
+  by = c("id", "group"), 
+  suffix = c("_end", "_base"))
+
+data_wide
+```
+
+Update the wide data with selected covariates as well.
+
+```{r}
+data_wide <- left_join(data_covariates, data_wide, by = c("id", "group"))
+```
+
+Great, now the data frame is almost ready for modeling. 
+
+
+
+### Transformations
+
+Prior to modeling, we need to transform data to approximate normality. There are many ways to do this, but one common way is to use a *log transformation*. There are many other possible transformations, and we will look at a few. 
+
+To determine *which* variables should be transformed, we first calculate the *skewness* of all baseline and end-of-study variables. To this, we will use the `e1071::skewness` function. This returns a value around zero for each variable, and can be interpreted like so: 
+
+- skewness < -1: left-skewed variable
+- skewness > 1: right-skewed variable
+
+To get a grasp of the variation, we do what we always do: we plot the result (in the case as a waterfall plot).
+
+```{r skewness, fig.width=15, fig.height=5}
+data_wide_skew <- data_wide %>% 
+  select(matches("_base|_end")) %>% 
+  summarise_all(e1071::skewness, na.rm = TRUE) %>% 
+  pivot_longer(cols = names(.), names_to = "variables", values_to = "value") 
+
+data_wide_skew %>% 
+  ggplot(aes(fct_reorder(variables, value), value)) +
+  geom_col(fill = RColorBrewer::brewer.pal(n = 6, name = "Pastel1")[2]) + 
+  geom_hline(yintercept = 1, color = "grey", linetype = "dashed") + 
+  geom_hline(yintercept = -1, color = "grey", linetype = "dashed") + 
+  theme_classic() + 
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank()) + 
+  labs(x = "Variable", y = "Skewness", title = "Skewness for all variables")
+```
+
+Obviously, we see quite a lot of variables that present with skewness above or below the thresholds mentioned. We will choose a transformation for each of the two classes, and then apply that to the variables. Then we will visualize the before-and-after distributions.
+
+Some of the transformations that can be considered are: 
+
+- logarithmic transformation (log)
+- square root transformation (sqrt)
+- inverse transformation
+- cube root transformation
+- square transformation
+
+Here, I have defined the three latter, as I don't know if they are part of a package in R already. 
+
+```{r}
+inverse <- function(x) {1/x}
+cuberoot <- function(x) {x^(1/3)}
+square <- function(x) {x^2}
+```
+
+Pull out the variables that are skewed. 
+
+```{r}
+data_wide_skew_left <- data_wide_skew %>% filter(value < -1) %>% pull("variables")
+data_wide_skew_right <- data_wide_skew %>% filter(value > 1) %>% pull("variables")
+```
+
+Plot the left skewed variables before and after transformation. Use a function for efficiency. 
+
+```{r}
+plot_histograms <- function(variables, before_after = "before", direction = "left") {
+  variables %>% 
+    pivot_longer(names(.)) %>% 
+    ggplot(aes(value)) + 
+    geom_histogram() + 
+    facet_wrap(~name, scales = "free") + 
+    labs(x = NULL, y = "Count", 
+         title = paste0("Distributions ", before_after, " transformation: ", direction, "-skewed variables"))
+}
+```
+
+
+```{r skewness-left-trans, fig.width=9, fig.height=7}
+data_wide %>% 
+  select(data_wide_skew_left) %>% 
+  plot_histograms()
+
+data_wide %>% 
+  select(data_wide_skew_left) %>% 
+  mutate_at(data_wide_skew_left, square) %>% 
+  plot_histograms(before_after = "after")
+```
+
+```{r skewness-right-trans, fig.width=20, fig.height=17}
+data_wide %>% 
+  select(data_wide_skew_right) %>% 
+  plot_histograms(direction = "right")
+
+data_wide %>% 
+  select(data_wide_skew_right) %>% 
+  mutate_at(data_wide_skew_right, log) %>% 
+  plot_histograms(before_after = "after", direction = "right")
+```
+
+
+I'm happy with the way the transformations worked out, and will apply these to the data. 
+
+```{r}
+data_wide <- data_wide %>% 
+  mutate_at(data_wide_skew_left, square) %>% 
+  mutate_at(data_wide_skew_right, log)
+```
+
+
+### Preliminary tests: one model
+
+Let's run a regression to see if things work.
+
+
+```{r}
+fit <- lm(`XXL-VLDL-P_end` ~ group + `XXL-VLDL-P_base`, data = data_wide)
+
+# Print model object
+fit
+
+# Use the summary function to get a more complete summary
+summary(fit)
+```
+
+This worked well. What does the 'fit' object contain?
+
+```{r}
+names(fit)
+```
+
+What we normally want is: 
+
+1) The beta coefficients, confidence intervals around those estimates, and p-values for the estimates. In this case we are only interested in the coefficients for the *group* variable.
+
+For this, we can use the `broom::tidy` function. Set conf.int to TRUE to get the 95 % CIs (we can choose other CIs if we want to).
+
+```{r}
+tidy(fit, conf.int = TRUE)
+```
+
+Let's try to plot the coefficients. 
+
+```{r fit-forest, fig.width=6, fig.height=3}
+fit %>% 
+  tidy(conf.int = TRUE) %>% 
+  ggplot(aes(term, estimate, fill = p.value)) + 
+  geom_hline(yintercept = 0, color = "grey60", linetype = "dashed") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  coord_flip() + 
+  scale_fill_distiller() + 
+  theme_classic() + 
+  theme(legend.position = "bottom")
+```
+
+
+2) Model-level information, such as $R^2$ or adjusted $R^2$. 
+
+For this, we can use the `broom::glance` function.
+
+```{r}
+glance(fit)
+```
+
+3) Individual-level information, such as fitted values and (standardized) residuals. 
+
+For this, we can use the `broom::augment` function.
+
+```{r}
+augment(fit)
+```
+
+Let's try to plot the residuals versus fitted values. 
+
+```{r fitted-resids-test}
+fit %>% 
+  augment() %>% 
+  ggplot(aes(.fitted, .resid)) + 
+  geom_hline(yintercept = 0, color = "grey", linetype = "dashed") + 
+  geom_point() + 
+  theme_classic() + 
+  labs(title = "XXL.VLDL.P_end")
+
+# Put this into a function (useful to map over many data and variables)
+plot_fitted_resids <- function(data, variable) {
+  data %>% 
+    ggplot(aes(.fitted, .resid)) + 
+    geom_hline(yintercept = 0, color = "grey", linetype = "dashed") + 
+    geom_point() + 
+    theme_classic() + 
+    labs(title = variable)
+}
+```
+
+
+All these objects are relatively complex, and to actually run these tests effectively, we need to use a clever setup (see next section: *Many models*). 
+
+Note that we could also have printed a more comprehensive model check using the `performance::check_model` function: 
+
+```{r check-model-test, fig.width=8, fig.height=8}
+fit %>% performance::check_model(panel = TRUE)
+```
+
+
+## Many models
+
+### Run analysis
+
+```{r}
+# The end-values
+data_wide_end <- data_wide %>% select(ends_with("_end"))
+
+# The base-values
+data_wide_base <- data_wide %>% select(ends_with("_base"))
+
+# Map over all pairs
+fit_many <- map2(
+  .x = data_wide_end, 
+  .y = data_wide_base, 
+  ~lm(.x ~ group + .y, data = data_wide)
+) %>% 
+  
+  # Enframe the list results so it's easier to work with
+  enframe(name = "variable", value = "fit")
+```
+
+### Clean results
+
+Add new variables by mapping over the 'fit' object. 
+
+```{r}
+fit_many_clean <- fit_many %>% 
+  mutate(
+    
+    # Change variable names
+    variable = str_replace_all(variable, "_end", ""), 
+    
+    # Coefficients
+    tidy = map(fit, ~tidy(.x, conf.int = TRUE) %>% filter(str_detect(term, "group"))), 
+    
+    # Model-level stats
+    glance = map(fit, glance), 
+    
+    # Individual level stats
+    augment = map(fit, augment), 
+    
+    # Plots
+    fitted_resids = map2(augment, variable, plot_fitted_resids), 
+    model_check = map(fit, performance::check_model)
+    )
+```
+
+Pull out the results. 
+
+```{r}
+fit_results <- fit_many_clean %>% 
+  select(variable, tidy, glance) %>% 
+  unnest()
+
+fit_results
+```
+
+### Check some assumptions
+
+We have a lot of figures available; here is a random figure. 
+
+```{r fitted-resids-ex}
+fit_many_clean$fitted_resids[[13]]
+```
+
+Check also the comprehensive model check: 
+
+```{r check-model-ex, fig.width=8, fig.height=8}
+fit_many_clean$model_check[[13]]
+```
+
+We want to skim through these in an effective manner. Therefore, put all the figures into a single file with multiple pages, each with 8 plots per page. 
+
+```{r fitted-resids, fig.width=6, fig.height=9}
+fit_many_clean %>% 
+  pluck("fitted_resids") %>% 
+  gridExtra::marrangeGrob(nrow = 4, ncol = 2) %>% 
+  ggsave(filename = "../results/figures/fitted-resids.pdf", width = 6, height = 9)
+```
+
+By glancing through all the residuals, we get a feeling that the models seem to work pretty well. 
+
+We could also print each comprehensive model check plot a single page, and bind everything in a pdf. This is more time-consuming, so we do the process in parallel too (although I couldn't make it work out in writing this script!). 
+
+```{r model-check, fig.width=8, fig.height=8}
+# Prep the progress bar
+pb <- progress_estimated(nrow(fit_many_clean))
+
+# Wrap the progress bar and saving in a function
+save_model_check <- function(object, id) {
+  
+  # Print the progress bar ticks
+  pb$tick()$print()
+  
+  # Save the plot
+  ggsave(plot = print(object), 
+         filename = glue::glue("../results/figures/check_model/{id}.png"), 
+         width = 8, height = 8)
+}
+
+# Map over each model check object and variable name, and save
+map2(fit_many_clean$model_check, 
+     fit_many_clean$variable %>% 
+       str_replace_all("_%", "_p") %>% 
+       str_replace_all("/", "r"), 
+     save_model_check
+     )
+```
+
+
+## Many more models
+
+Now we have basically completed the first model - the most elemental model with no covariate adjustments. In Ulven SM AJCN 2019, we investigated several models and covariate adjustment levels, some of which were: 
+
+- Adjusted for *age and gender*
+- Adjusted for *age, gender and weight change*
+
+Let's run those too. I've compressed the code as much as possible, so as to save space. I have done this simply by creating a function that takes the list of lm models, and returns the results in a nicely organized data frame. Then all I need to do is to pull out the coefficients (estimates, 95 % confidence intervals and P values). Here is the function to do just that.
+
+```{r}
+clean_results <- function(list_of_lm_results) {
+  list_of_lm_results %>% 
+    enframe(name = "variable", value = "fit") %>% 
+    mutate(
+      variable = str_replace_all(variable, "_end", ""), 
+      tidy = map(fit, ~tidy(.x, conf.int = TRUE) %>% filter(str_detect(term, "group"))), 
+      glance = map(fit, glance), 
+      augment = map(fit, augment), 
+      fitted_resids = map2(augment, variable, plot_fitted_resids)) %>% 
+    select(-fit)
+}
+```
+
+Additionally, let's wrap the code to produce fitted-resid plots to separate files in a function too.
+
+```{r}
+save_plots <- function(lm_list_column, adjustment) {
+  lm_list_column %>% 
+    pluck("fitted_resids") %>% 
+    gridExtra::marrangeGrob(nrow = 4, ncol = 2) %>% 
+    ggsave(filename = paste0("../results/figures/fitted-resids-", adjustment, ".pdf"), 
+           width = 6, height = 9)
+}
+```
+
+Now use these functions to get results for the above-mentioned adjustment levels. 
+
+```{r}
+# Age and gender
+fit_many_ag <- map2(
+  .x = data_wide %>% select(ends_with("_end")), 
+  .y = data_wide %>% select(ends_with("_base")), 
+  ~lm(.x ~ group + .y + age + gender, data = data_wide)) %>% 
+  clean_results()
+
+save_plots(fit_many_ag, "ag")
+
+# Age, gender and weight change
+fit_many_agw <- map2(
+  .x = data_wide %>% select(ends_with("_end")), 
+  .y = data_wide %>% select(ends_with("_base")), 
+  ~lm(.x ~ group + .y + age + gender + weight, data = data_wide)) %>% 
+  clean_results()
+
+save_plots(fit_many_agw, "agw")
+```
+
+Finally, we put all coefficients into a single data frame and, for each adjustment level, add FDR correction. 
+
+```{r}
+results_group <- list(
+  "None" = fit_results, 
+  "Age and gender" = fit_many_ag %>% select(variable, tidy, glance) %>% unnest(), 
+  "Age, gender and weight change" = fit_many_agw %>% select(variable, tidy, glance) %>% unnest()
+) %>% 
+  bind_rows(.id = "adj") %>% 
+  group_by(adj) %>% 
+  mutate(fdr = p.adjust(p.value, method = "fdr")) %>% 
+  ungroup()
+
+results_group
+```
+
+Great, now we have most of our models. 
+
+Let's plot the distribution of P values and FDR q values. 
+
+```{r p-hist, fig.width=7, fig.height=2}
+results_group %>% 
+  ggplot(aes(p.value)) + 
+  geom_histogram(fill = "red") + 
+  geom_freqpoly(aes(fdr), color = "blue") + 
+  facet_wrap(~adj) + 
+  theme_light()
+```
+
+
+## Scaled models
+
+Now, in order to actually plot these models in forestplots, we will rerun the analyses, now with all variables normalized to have *mean = 0* and *sd = 1* using the `scale` function. 
+
+```{r}
+data_wide_scaled <- data_wide %>% 
+  mutate_at(vars(matches("_end|_base")), scale)
+
+# No adjustments
+fit_many_scaled <- map2(
+  .x = data_wide_scaled %>% select(ends_with("_end")), 
+  .y = data_wide_scaled %>% select(ends_with("_base")), 
+  ~lm(.x ~ group + .y, data = data_wide_scaled)) %>% 
+  clean_results() %>% 
+  select(variable, tidy, glance) %>% 
+  unnest()
+
+# Age and gender
+fit_many_scaled_ag <- map2(
+  .x = data_wide_scaled %>% select(ends_with("_end")), 
+  .y = data_wide_scaled %>% select(ends_with("_base")), 
+  ~lm(.x ~ group + .y + age + gender, data = data_wide_scaled)) %>% 
+  clean_results() %>% 
+  select(variable, tidy, glance) %>% 
+  unnest()
+
+# Age, gender and weight change
+fit_many_scaled_agw <- map2(
+  .x = data_wide_scaled %>% select(ends_with("_end")), 
+  .y = data_wide_scaled %>% select(ends_with("_base")), 
+  ~lm(.x ~ group + .y + age + gender + weight, data = data_wide_scaled)) %>% 
+  clean_results() %>% 
+  select(variable, tidy, glance) %>% 
+  unnest()
+```
+
+Again, put them all into a common data frame and add FDR; also, cut both P values and FDR q values into commonly used *groups*. 
+
+```{r}
+results_scaled_group <- list(
+  "None" = fit_many_scaled, 
+  "Age and gender" = fit_many_scaled_ag, 
+  "Age, gender and weight change" = fit_many_scaled_agw
+) %>% 
+  bind_rows(.id = "adj") %>% 
+  group_by(adj) %>% 
+  mutate(
+    fdr = p.adjust(p.value, method = "fdr"), 
+    p.value.group = case_when(
+      p.value < 0.001 ~ "< 0.001", 
+      p.value < 0.01 ~ "< 0.01", 
+      p.value < 0.05 ~ "< 0.05", 
+      p.value >= 0.05 ~ "\u2265 0.05", 
+      TRUE ~ NA_character_) %>% 
+      factor(levels = c("\u2265 0.05", "< 0.05", "< 0.01", "< 0.001")), 
+    fdr.group = case_when(
+      fdr < 0.05 ~ "< 0.05", 
+      fdr < 0.10 ~ "< 0.10", 
+      fdr < 0.15 ~ "< 0.15", 
+      fdr >= 0.20 ~ "\u2265 0.20", 
+      TRUE ~ NA_character_) %>% 
+      factor(levels = c("\u2265 0.20", "< 0.15", "< 0.10", "< 0.05"))
+  ) %>% 
+  ungroup()
+
+results_scaled_group
+```
+
+This looks great. 
+
+
+## LDL-C as exposure (at baseline)
+
+A main point of the NoMa study is that *exchanging SFA by PUFA will reduce LDL-C*. And indeed, this is what happened is the intervention: the intervention arm reduced the TC and LDL-C by ~10 %, while there was no change in the control arm. Naturally, we would assume that changes in the *Nigtingale metabolome* associates strongly with changes in LDL-C. One way to test this is to look at the cross-sectional association between LDL-C and Nightingale metabolites at baseline, and whether these associations are "normalized" by the intervention. To test this hypothesis in a global manner, we can then plot a scatteplot between the baseline, cross-sectional $\beta$ coefficients (x axis), and the intervention-based group effect $\beta$ coefficients (y axis). 
+
+Therefore, we run a single model with LDL-C as the exposure (at baseline), with adjustment for age, gender and weight. 
+
+```{r}
+results_scaled_ldlc <- map(
+  .x = data_wide_scaled %>% select(ends_with("_base")), 
+  ~lm(.x ~ ldlc + age + gender + bmi, data = data_wide_scaled)) %>% 
+  enframe(name = "variable", value = "fit") %>% 
+  mutate(
+    tidy = map(fit, ~tidy(.x, conf.int = TRUE) %>% filter(str_detect(term, "ldlc"))), 
+    glance = map(fit, glance)) %>% 
+  select(variable, tidy, glance) %>% 
+  unnest() %>% 
+  mutate(variable = str_replace_all(variable, "_base", ""), 
+         adj = "Age, gender and BMI", 
+         fdr = p.adjust(p.value, method = "fdr"))
+
+results_scaled_ldlc
+```
+
+Fantastic. 
+
+
+
+
+
+## Conclusions
+
+This concludes the script. Some conclusions and take-homes: 
+
+- Work thoroughly with the data transformations, and visualize the data as you go along
+- Make your analysis work with a single use case, and then scale up
+- Scale up with purrr and the map family (computers are best at computing!)
+- Use list-columns when you can (to avoid having to name object!)
+- Use functions (to avoid copy-paste of code!)
+- ....
+
+
+## Save
+
+Here we save those files that we will use in downstream work. 
+
+```{r}
+# RDS files
+saveRDS(results_scaled_group, file = "../data/processed/results_scaled_group.rds")
+saveRDS(results_scaled_ldlc, file = "../data/processed/results_scaled_ldlc.rds")
+saveRDS(results_group, file = "../data/processed/results_group.rds")
+
+# Excel files
+list(
+  "group" = results_group, 
+  "scaled_group" = results_scaled_group, 
+  "scaled_ldlc" = results_scaled_ldlc
+) %>% 
+  openxlsx::write.xlsx(file = "../results/tables/results_models.xlsx", colWidths = "auto")
+```
+
+
+
+## Session info
+
+To improve reproducibility, print out the session info for this script. 
+
+```{r}
+devtools::session_info()
+```
+

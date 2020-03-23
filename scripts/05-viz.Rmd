@@ -1,0 +1,1012 @@
+---
+title: "Data visualizations"
+subtitle: "NOMA intervention: Nightingale NMR metabolomics analyses"
+author: "Jacob J. Christensen"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+    toc_float: yes
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	eval = TRUE, 
+  echo = TRUE, 
+  message = TRUE, 
+  warning = FALSE, 
+	root.dir = normalizePath(".."),
+	dev = c("png", "cairo_pdf"), 
+	dpi = 300, 
+  fig.show = "hold", 
+	fig.align = "center", 
+	fig.keep = "all", 
+	fig.path = "../results/figures/05-viz-"
+)
+```
+
+
+## Info
+
+In this file, I will plot the model results as forestplots and correlation plots. 
+
+
+## Load libraries
+
+First, we load necessary *libraries*.  
+
+```{r}
+library(tidyverse) # A whole bunch of packages necessary for data analysis
+```
+
+## Load results
+
+Load *results* from the previous step. 
+
+```{r}
+results_scaled_group <- readRDS(file = "../data/processed/results_scaled_group.rds")
+```
+
+
+## Understand the results table
+
+Let's start by gaining some understanding of what type of results we have. 
+
+### View
+
+```{r}
+results_scaled_group
+# View(results_scaled_group)
+```
+
+This is a data frame with 675 rows and 23 columns. We can verify that with the `dim`, `nrow` and `ncol` functions. 
+
+```{r}
+dim(results_scaled_group) # 675 and 23
+nrow(results_scaled_group) # 675
+ncol(results_scaled_group) # 23
+```
+
+This seems right.
+
+
+### Names of columns
+
+What are the names of the columns?
+
+```{r}
+names(results_scaled_group)
+```
+
+### What's the *adj* column?
+
+The *adj* variable is the adjustments (or covariates) included in the specific model. We can pull out the variable (or vector) from the data frame using the dollar sign operator. Then we would get all 675 values printed to the screen. Let's instead print the first five.
+
+```{r}
+results_scaled_group$adj
+results_scaled_group$adj[1:5]
+```
+
+And check that the variable/vector is 675 values long. 
+
+```{r}
+length(results_scaled_group$adj)
+```
+
+Correct! How many unique values does this variable hold?
+
+```{r}
+unique(results_scaled_group$adj) # Unique adjustment levels
+```
+
+Three adjustment levels. And then how many variables do we then have 
+
+```{r}
+675 / 3 # The number of variables that we have data for
+```
+
+### Filter on adjustment level
+
+Let's focus on the adjustment level we used in the original paper: "Age, gender and weight change". 
+
+```{r}
+filter(.data = results_scaled_group, adj == "Age, gender and weight change")
+```
+
+### The pipe (`%>%`)
+
+This is the same line: 
+
+```{r}
+filter(.data = results_scaled_group, adj == "Age, gender and weight change")
+results_scaled_group %>% filter(adj == "Age, gender and weight change")
+```
+
+Here we used the pipe (`%>%`), which is from the `magrittr` package. This operator takes the object on the left and puts it as the first argument in the function on the right. 
+
+### Code with comments/hashtags (#)
+
+I will write code like so, with comments (after the hashtag), to make it clearer what I change as we go along. 
+
+```{r}
+results_scaled_group %>% 
+  
+  # Keep only rows where the column "adj" is equal to "Age, gender and weight change"
+  filter(adj == "Age, gender and weight change")
+```
+
+### Select just a few results columns
+
+Next, to reduce the complexity, let's select the most important columns and toss out the rest. 
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  
+  # Select the most important columns
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group)
+```
+
+That's more manageable. Now we have a dataset with 225 rows and 7 columns. But we don't want to plot all these 225 variables at the same time. We want to focus on those that made up figure 1 in the paper. To filter out those, we first have to do one thing: join with annotation data. 
+
+### Load and inspect the annotation data
+
+```{r}
+annotation <- readRDS(file = "../data/processed/annotation.rds")
+```
+
+Let's quickly look at the names of the annotation object.
+
+```{r}
+names(annotation)
+names(annotation$nightingale)
+```
+
+Look closer at the nightingale part of the annotation object.
+
+```{r}
+annotation$nightingale
+```
+
+It has 225 rows of 12 columns. The *name.short* column is the same as the *variable* column in the results table. We can use those to bind together the data frames, and thereby add the annotation.
+
+### Add annotation
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  
+  # Left join with the Nightingale annotation data frame, and join by the "variable" and "name.short" columns
+  left_join(annotation$nightingale, by = c("variable" = "name.short"))
+```
+
+### Filter on results variables to plot
+
+Now we have new columns added to our results data frame. Next, we can filter on "Particle concentration", since we want to visualize these first. 
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  
+  # Keep rows where "type" is equal to "Particle concentration"
+  filter(type == "Particle concentration")
+```
+
+Good. Now we only have 14 rows and 33 columns, and we are ready to start plotting. 
+
+### Note
+
+Note that the preparations we have done here now are not saved. We just print the result to the screen, and that's it. The file that we originally loaded the table from is completely unaffected. 
+
+
+
+## Forestplots 
+
+### Build the initial plot gradually
+
+Now we will build a simple plot gradually. 
+
+It's an iterative process, where we have an initial idea and try to build the best plot possible. We don't know if the idea worked until we actually see the result in front of us. 
+
+#### Point estimates
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  
+  # Initiate ggplot call, and put "variable" and "estimate" on the x and y axes, respectively
+  ggplot(data = ., mapping = aes(x = variable, y = estimate)) + 
+  
+  # Add a geom_point layer (a geometric point object)
+  geom_point()
+```
+
+This is a start. We have our variables and our estimates. But what we really want is to also visualize the uncertainty around those estimates. Which geometrical object should we therefore switch to?
+
+#### Point estimates with uncertainty
+
+```{r eval=FALSE}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  
+  # Before this point: dplyr specifics (data wrangling)
+  
+  # Below this point: ggplot2 specifics (plotting) 
+  # Note also that I use "+" and not "%>%" after this point
+  
+  ggplot(mapping = aes(x = variable, y = estimate)) + 
+  
+  # Switch to geom_pointrange
+  geom_pointrange()
+```
+
+But there is something wrong! What does the error message say? 
+
+> Error: geom_pointrange requires the following missing aesthetics: ymin, ymax
+
+Ah, so we might need to add the lower and upper CI boundaries. What were thir names again?
+
+```{r}
+names(results_scaled_group)
+```
+
+They are named "conf.low" and "conf.high"! Perfect. Let's add those to the geom_pointrange aesthetics. 
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  
+  # Before this point: dplyr specifics (data wrangling)
+  
+  # Below this point: ggplot2 specifics 
+  # Note also that I use "+" and not "%>%" after this point
+  
+  ggplot(mapping = aes(x = variable, y = estimate)) + 
+  
+  # Add a geom_pointrange layer with lower and upper CIs
+  geom_pointrange(mapping = aes(ymin = conf.low, ymax = conf.high))
+```
+
+But what we really want is to display the variables on the y axis. Flip the axes using "coord_flip".
+
+#### Flip coordinates
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  
+  # Before this point: dplyr specifics (data wrangling)
+  
+  # Below this point: ggplot2 specifics 
+  # Note also that I use "+" and not "%>%" after this point
+  
+  ggplot(aes(x = variable, y = estimate)) + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  
+  # Flip the coordinates
+  coord_flip()
+```
+
+Nice. But now it becomes apparent that the variable names are ordered alphabetically. That's really not helpful at all. Use the fct_reorder function to reorder the variables by the "name.order" column. 
+
+#### Reorder variables
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  
+  # Reorder the variables 
+  mutate(variable = fct_reorder(variable, name.order)) %>% 
+  
+  # Before this point: dplyr specifics (data wrangling)
+  
+  # Below this point: ggplot2 specifics 
+  # Note also that I use "+" and not "%>%" after this point
+  
+  ggplot(aes(x = variable, y = estimate)) + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  coord_flip()
+```
+
+Better - but it feels natural to keep the largest size high up on the plot, and the smaller sizes lower on the plot. So simply add a minus sign to the ordering to switch it around. 
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  
+  # Reverse the order (add a minus sign)
+  mutate(variable = fct_reorder(variable, -name.order)) %>% 
+  
+  # Before this point: dplyr specifics (data wrangling)
+  
+  # Below this point: ggplot2 specifics 
+  # Note also that I use "+" and not "%>%" after this point
+  
+  ggplot(aes(x = variable, y = estimate)) + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  coord_flip()
+```
+
+Much better. But did you notice the redundancy in the variable names? They all contain an unnecessary *-P*. Let's use the *names.pretty* instead. 
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  
+  # Do the same, but use the names.pretty variable instead
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  # Before this point: dplyr specifics (data wrangling)
+  
+  # Below this point: ggplot2 specifics 
+  # Note also that I use "+" and not "%>%" after this point
+  
+  ggplot(aes(x = name.pretty, y = estimate)) + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  coord_flip()
+```
+
+Next, we might want to highlight the significance level, here called *p.value.group*. Let's see which unique values this variable has. 
+
+#### Colors (default)
+
+```{r}
+unique(results_scaled_group$p.value.group)
+```
+
+This is great. That's exactly what we want to color by. Add that to the aeshetics to the ggplot call. 
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, 
+             
+             # Color by P value group (significance level)
+             color = p.value.group)) + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  coord_flip()
+```
+
+Very cool. 
+
+#### Colors (modified #1)
+
+But what if we are unsatisfied by the default colors that ggplot2 supplied? Then we can choose other colors. I usually pick colors from the palettes offered by the RColorBrewer package. To display them, run this line. 
+
+```{r fig.width=6, fig.height=8}
+RColorBrewer::display.brewer.all(colorblindFriendly = TRUE)
+```
+
+Here we can color many types of continuous (sequential or diverging) or discrete distributions. We have four groups, and will therefore choose a discrete distribution. I like "Dark2". 
+
+So how do we use this knowledge? I usually modify aesthetics using the "scale_*" family of function. For our particular plot, we want to modify the color aesthetic, and will use the function called "scale_color_brewer)
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, 
+             color = p.value.group)) + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  
+  # Modify the color aesthetic
+  scale_color_brewer(name = "P value", palette = "Dark2") + 
+  coord_flip()
+```
+
+
+We could also choose exactly which colors we want. To do this, we need to retrieve the actual hex codes that make up the palettes. 
+
+Say for example that we want a palette that reflects a traffic light for 'increasing significance' (red - yellow - green). In addition, we could use a neutral color for non-significance. Let's find those colors.
+
+```{r fig.width=6, fig.height=8}
+RColorBrewer::display.brewer.all()
+```
+
+For "Set1", there seems to be something that resembles a traffic light. Let's get the hex codes for those colors.
+
+```{r}
+RColorBrewer::brewer.pal(n = 9, name = "Set1")
+```
+
+Right - that's what the hex codes look like. Note that the grey color at the end looks a bit different than the rest. So to select our colors of choice, we can simply subset them. To subset, we can use square-brackets, and supply it a vector of the numerical indices that we wish to retain. We would like to retain: 
+
+- Grey (index 9)
+- Red (index 1)
+- Yellow (index 6)
+- Green (index 3)
+
+So our code chunk will then look like this: 
+
+```{r}
+RColorBrewer::brewer.pal(n = 9, name = "Set1")[c(9, 1, 6, 3)]
+```
+
+Now we have our colors. But how to map those onto the correct P value level? In two steps: 
+
+1) Supply the P value levels as names for the hex codes, and
+2) Use that vector as *values* in scale_color_manual (see below)
+
+```{r}
+RColorBrewer::brewer.pal(n = 9, name = "Set1")[c(9, 1, 6, 3)] %>% 
+  set_names(c(levels(results_scaled_group$p.value.group)))
+```
+
+Great - let's save it to a useful object.
+
+```{r}
+mycols_traffic <- RColorBrewer::brewer.pal(n = 9, name = "Set1")[c(9, 1, 6, 3)] %>% 
+  set_names(c(levels(results_scaled_group$p.value.group)))
+
+mycols_traffic
+```
+
+And then supply that vector to scale_color_manual. 
+
+#### Colors (modified #2)
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, 
+             color = p.value.group)) + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  
+  # Switch to scale_color_manual, and set the correct values
+  scale_color_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip()
+```
+
+In fact, I want to color the inside of the points only, and leave the confidence intervals black. Then I need to do a few more tweaks: 
+
+1) Specify the *shape* of the geom_pointrange to a shape that has both a border and fill, such as shape = 21.
+2) Change all *color* aesthetics to *fill* aesthetics.
+
+#### Change from color to fill
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, 
+             
+             # Change "color" to "fill"
+             fill = p.value.group)) + 
+  
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), 
+                  
+                  # Change to a point shape that has both a border and a filling
+                  shape = 21) + 
+  
+  # Switch to scale_fill_manual
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip()
+```
+
+Now most of the actual data-related modifications are in place. However, there are certain other design-related features that we might want to adjust: 
+
+1) We can set the theme to a more publication-ready theme
+2) We can adjust the x and y labels (Do we need a y label?), and add titles and captions
+
+#### Theme and labels
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, fill = p.value.group)) + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip() + 
+  
+  # Use the classic theme, which is a bit more publication-ready
+  theme_classic() + 
+  
+  # Rename the y-axis label and remove the x-axis label (it doesn't really provide anything)
+  labs(y = "Estimate (95 % CI)", x = NULL, 
+       
+       # Add a title
+       title = "Particle concentration")
+```
+
+To continue the polishing efforts, let's do a few more things: 
+
+1) Add a horizontal reference line at estimate = 0 (remember, since we flipped the plotting axes, horizontal lines are vertical)
+2) Put the legend at the bottom of the plot
+3) Adjust the plot size
+
+```{r fig.width=4, fig.height=4}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, fill = p.value.group)) + 
+  
+  # Add a horizontal reference line
+  geom_hline(yintercept = 0, color = "grey60", linetype = "dashed") +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip() + 
+  theme_classic() + 
+  
+  # Move the legend to the bottom
+  theme(legend.position = "bottom") + 
+  labs(y = "Estimate (95 % CI)", x = NULL, title = "Particle concentration")
+```
+
+When the plot area is this narrow, the legend stretches on the outside of the plot. One solution to this issue is to put the legend icons on two rows. 
+
+#### Legend on two rows
+
+```{r fig.width=4, fig.height=4}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type == "Particle concentration") %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, fill = p.value.group)) + 
+  geom_hline(yintercept = 0, color = "grey60", linetype = "dashed") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip() + 
+  theme_classic() + 
+  theme(legend.position = "bottom") + 
+  
+  # Put the legend (for the fill aesthetic) on two rows
+  guides(fill = guide_legend(nrow = 2)) + 
+  labs(y = "Estimate (95 % CI)", x = NULL, title = "Particle concentration")
+```
+
+Finally! I would now say that this plot is complete. 
+
+### More variables
+
+Now that the general plot structure is defined, we can select even more variables, and group these in categories. Actually, we have already prepared all of this in the annotation file. Therefore, (almost) all we have to do is to filter on even more variable types. 
+
+```{r}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  
+  # Filter on more variable types (defined in the annotation file)
+  filter(type %in% c("Particle concentration", "Apolipoproteins") |
+           lipid.subclasses == "no" & type %in% c(
+             "Cholesterol", "Triglycerides", "Phospholipids")
+         )
+```
+
+Here we have 35 variables. Perfect for a nice forestplot! Let's try and plot it directly. 
+
+#### First try
+
+```{r fig.width=4, fig.height=8}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  
+  # Filter on more variable types (defined in the annotation file)
+  filter(type %in% c("Particle concentration", "Apolipoproteins") |
+           lipid.subclasses == "no" & type %in% c("Cholesterol", 
+                                                  "Triglycerides", 
+                                                  "Phospholipids")) %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, fill = p.value.group)) + 
+  geom_hline(yintercept = 0, color = "grey60", linetype = "dashed") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip() + 
+  theme_classic() + 
+  theme(legend.position = "bottom") + 
+  guides(fill = guide_legend(nrow = 2)) + 
+  labs(y = "Estimate (95 % CI)", x = NULL)
+```
+
+Alright. The figure is now higher (note that I doubled the fig.height in the code chunk header!). 
+
+But something is wrong. We need to group the variables based on the types. To this, we use facets.
+
+#### Facet by variable types
+
+```{r fig.width=4, fig.height=8}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type %in% c("Particle concentration", "Apolipoproteins") |
+           lipid.subclasses == "no" & type %in% c("Cholesterol", 
+                                                  "Triglycerides", 
+                                                  "Phospholipids")) %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, fill = p.value.group)) + 
+  geom_hline(yintercept = 0, color = "grey60", linetype = "dashed") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip() + 
+  
+  # Create a facet grid by variable types in the rows
+  facet_grid(rows = vars(type)) + 
+  theme_classic() + 
+  theme(legend.position = "bottom") + 
+  guides(fill = guide_legend(nrow = 2)) + 
+  labs(y = "Estimate (95 % CI)", x = NULL)
+```
+
+This is obviously not what we want. We need to free up the scales and plotting space within each facet.
+
+```{r fig.width=4, fig.height=8}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type %in% c("Particle concentration", "Apolipoproteins") |
+           lipid.subclasses == "no" & type %in% c("Cholesterol", 
+                                                  "Triglycerides", 
+                                                  "Phospholipids")) %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, fill = p.value.group)) + 
+  geom_hline(yintercept = 0, color = "grey60", linetype = "dashed") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip() + 
+  facet_grid(rows = vars(type), 
+             
+             # Free up the scales and plotting space within each facet
+             scales = "free", space = "free") + 
+  theme_classic() + 
+  theme(legend.position = "bottom") + 
+  guides(fill = guide_legend(nrow = 2)) + 
+  labs(y = "Estimate (95 % CI)", x = NULL)
+```
+
+I don't completely like the ugly black border around the strips. Also, I want to be able to read the strip text without tilting my head (let's rotate them!). Again we modify non-data ink using themes.
+
+```{r fig.width=5, fig.height=8}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type %in% c("Particle concentration", "Apolipoproteins") |
+           lipid.subclasses == "no" & type %in% c("Cholesterol", 
+                                                  "Triglycerides", 
+                                                  "Phospholipids")) %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, fill = p.value.group)) + 
+  geom_hline(yintercept = 0, color = "grey60", linetype = "dashed") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip() + 
+  facet_grid(rows = vars(type), scales = "free", space = "free") + 
+  theme_classic() + 
+  theme(legend.position = "bottom", 
+        
+        # Remove ugly black border around strips
+        strip.background.y = element_blank(), 
+        
+        # Rotate the strip text so that it's easier to read
+        strip.text.y = element_text(angle = 0)) + 
+  guides(fill = guide_legend(nrow = 2)) + 
+  labs(y = "Estimate (95 % CI)", x = NULL)
+```
+
+This, unfortunately, makes the figure a bit too wide. There is a lot of whitespace on the right hand side. There are several ways to deal with this, one of which is to simply shorten the faceting names. I've already prepared such a variable, so let's facet by that one instead. 
+
+```{r fig.width=5, fig.height=8}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type %in% c("Particle concentration", "Apolipoproteins") |
+           lipid.subclasses == "no" & type %in% c("Cholesterol", 
+                                                  "Triglycerides", 
+                                                  "Phospholipids")) %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order)) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, fill = p.value.group)) + 
+  geom_hline(yintercept = 0, color = "grey60", linetype = "dashed") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip() + 
+  
+  # Change to "type.short", which displays nicer on the facets
+  facet_grid(rows = vars(type.short), scales = "free", space = "free") + 
+  theme_classic() + 
+  theme(legend.position = "bottom", 
+        strip.background.y = element_blank(), 
+        strip.text.y = element_text(angle = 0)) + 
+  guides(fill = guide_legend(nrow = 2)) + 
+  labs(y = "Estimate (95 % CI)", x = NULL)
+```
+
+That's better. We can just add the whole facet/group name in an abbreviation list. 
+
+In a final tweak, I want to manually switch the order in which a few of the variables are presented. For example, I often want to show *ApoB* before *ApoA1*, and I want to move the variables *EstC*, *FreeC*, and *Remnant-C* above the specific particles, within the *Cs/Cholesterol* facet. We can do all this before we plot the figure, inside the call to mutate. 
+
+```{r fig.width=5, fig.height=8}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type %in% c("Particle concentration", "Apolipoproteins") |
+           lipid.subclasses == "no" & type %in% c("Cholesterol", 
+                                                  "Triglycerides", 
+                                                  "Phospholipids")) %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order) %>% 
+           
+           # Relevel a few specific variables
+           fct_relevel( 
+             
+             # Pull ApoB to the start of it's panel
+             "ApoB", 
+             
+             # Pull *EstC*, *FreeC*, and *Remnant-C* to the start of their panel (after "Serum-C")
+             "Remnant-C", "FreeC", "EstC", "Serum-C", 
+             
+             after = Inf
+             
+             )) %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, fill = p.value.group)) + 
+  geom_hline(yintercept = 0, color = "grey60", linetype = "dashed") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip() + 
+  facet_grid(rows = vars(type.short), scales = "free", space = "free") + 
+  theme_classic() + 
+  theme(legend.position = "bottom", 
+        strip.background.y = element_blank(), 
+        strip.text.y = element_text(angle = 0)) + 
+  guides(fill = guide_legend(nrow = 2)) + 
+  labs(y = "Estimate (95 % CI)", x = NULL)
+```
+
+And THAT ... I consider a nice plot. Here is the final code snippet. 
+
+```{r fig.width=5, fig.height=8}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  filter(type %in% c("Particle concentration", "Apolipoproteins") |
+           lipid.subclasses == "no" & type %in% c("Cholesterol", "Triglycerides", "Phospholipids")) %>% 
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order) %>% 
+           fct_relevel("ApoB", "Remnant-C", "FreeC", "EstC", "Serum-C", after = Inf)) %>% 
+  ggplot(aes(x = name.pretty, y = estimate, fill = p.value.group)) + 
+  geom_hline(yintercept = 0, color = "grey60", linetype = "dashed") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip() + 
+  facet_grid(rows = vars(type.short), scales = "free", space = "free") + 
+  theme_classic() + 
+  theme(legend.position = "bottom", 
+        strip.background.y = element_blank(), 
+        strip.text.y = element_text(angle = 0)) + 
+  guides(fill = guide_legend(nrow = 2)) + 
+  labs(y = "Estimate (95 % CI)", x = NULL)
+```
+
+
+#### Save the final figure
+
+Let's save this figure using ggsave. This function remembers the last plot that you produced (here, in the RMarkdown document), and then saves that to a file that you specify. 
+
+Use this code to save PNG (raster graphics) files. 
+
+```{r}
+ggsave(filename = "../results/figures/forest-lipid.classes.png", width = 5, height = 8, dpi = 400)
+
+ggsave(filename = "../results/figures/forest-lipid-classes.png", 
+       width = 5, height = 8, dpi = 300)
+```
+
+Use this code to save PDF (vector graphics) files. 
+
+```{r}
+ggsave(filename = "../results/figures/forest-lipid-classes.pdf", 
+       width = 5, height = 8, device = cairo_pdf)
+```
+
+Note that I set the device to *cairo_pdf* from the Cairo package. This is useful when we save PDF files, because it can render special characters, like the more-than-or-equal sign (>=, `r "\u2265"`) that I use to signify more-than-or-equal-to 0.05 (for P values) or 0.20 (for FDR values). If I use the regular pdf device, this would look like a equal sign (=), which is obviously incorrect. 
+
+
+## Another figure
+
+```{r forest-misc, fig.width=5, fig.height=7}
+results_scaled_group %>% 
+  filter(adj == "Age, gender and weight change") %>% 
+  select(variable, estimate, conf.low, conf.high, p.value, p.value.group, fdr.group) %>% 
+  left_join(annotation$nightingale, by = c("variable" = "name.short")) %>% 
+  
+  # I filter on variable types that I wish to show...
+  filter(type %in% c("Fatty acids", 
+                     "Glucose metabolism", 
+                     "AA, other", 
+                     "AA, aromatic", 
+                     "AA, branched-chain", 
+                     "Ketone bodies", 
+                     "Miscellaneous"), 
+         unit != "%") %>% 
+  
+  # ...And relevel some of them manually!
+  mutate(name.pretty = fct_reorder(name.pretty, -name.order) %>% 
+           fct_relevel("DHA", "FAw3", "LA", "FAw6", "PUFA", "MUFA", "SFA", "TotFA", after = Inf)) %>% 
+  
+  # And if I wish to remove the UnSat variable, just filter it away, like so: 
+  filter(name.pretty != "UnSat") %>% 
+  
+  ggplot(aes(x = name.pretty, y = estimate, fill = p.value.group)) + 
+  geom_hline(yintercept = 0, color = "grey60", linetype = "dashed") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high), shape = 21) + 
+  scale_fill_manual(name = "P value", values = mycols_traffic) + 
+  coord_flip() + 
+  facet_grid(rows = vars(type.short), scales = "free", space = "free") + 
+  theme_classic() + 
+  theme(legend.position = "bottom", 
+        strip.background.y = element_blank(), 
+        strip.text.y = element_text(angle = 0)) + 
+  guides(fill = guide_legend(nrow = 2)) + 
+  labs(y = "Estimate (95 % CI)", x = NULL)
+```
+
+
+
+## LDL-C as exposure (at baseline)
+
+A main point of the NoMa study is that *exchanging SFA by PUFA will reduce LDL-C*. And indeed, this is what happened is the intervention: the intervention arm reduced the TC and LDL-C by ~10 %, while there was no change in the control arm. Naturally, we would assume that changes in the *Nigtingale metabolome* associates strongly with changes in LDL-C. One way to test this is to look at the cross-sectional association between LDL-C and Nightingale metabolites at baseline, and whether these associations are "normalized" by the intervention. To test this hypothesis in a global manner, we can then plot a scatteplot between the baseline, cross-sectional $\beta$ coefficients (x axis), and the intervention-based group effect $\beta$ coefficients (y axis). 
+
+Therefore, we have prepared linear regression results with LDL-C as the exposure (at baseline), with adjustment for age, gender and BMI. 
+
+```{r}
+results_scaled_ldlc <- readRDS(file = "../data/processed/results_scaled_ldlc.rds")
+```
+
+Let's select only the estimates, and join the estimates from the (scaled) group and continuous LDL-C analyses.
+
+```{r}
+estimates_xy <- left_join(
+  results_scaled_group %>% 
+    ungroup() %>% 
+    filter(adj == "Age, gender and weight change") %>% 
+    select(variable, estimate), 
+  results_scaled_ldlc %>% 
+    select(variable, estimate), 
+  by = "variable", 
+  suffix = c("_group", "_ldlc")
+)
+```
+
+Next, run a linear regression for all 225 variables, and pull out those that have standardized residuals less than -1.5 or higher than 1.5. Then plot the scatterplot for all variables, and highlight those with aberrant residuals. 
+
+```{r scatter-all}
+high_resids <- estimates_xy %>% 
+  as.data.frame() %>% column_to_rownames("variable") %>% 
+  lm(estimate_ldlc ~ estimate_group, data = .) %>% 
+  broom::augment() %>% 
+  filter(.std.resid > 1.5 | .std.resid < -1.5) %>% 
+  pull(".rownames")
+
+estimates_xy %>% 
+  ggplot(aes(estimate_group, estimate_ldlc)) + 
+  geom_smooth(method = "lm", color = "black", size = 0.5) + 
+  geom_point(shape = 21, fill = "lightblue", color = "grey50", size = 3) + 
+  ggrepel::geom_text_repel(
+    data = . %>% filter(variable %in% high_resids), 
+    aes(label = variable), size = 2.5, force = 0.5, box.padding = unit(0.1, "lines")) + 
+  theme_classic() + 
+  labs(x = "Difference between intervention and control group at end-of-study", 
+       y = "Association with LDL-C at baseline", 
+       caption = "Data: all")
+```
+
+Definitely a clear negative association, just as expected. However, it seems that there are a lot of 'outliers', and it seems many of them are percentages or ratios. Let's try and remove those and plot the figure again. 
+
+```{r scatter-sub}
+high_resids_sub <- estimates_xy %>% 
+  filter(str_detect(variable, "%|/", negate = TRUE)) %>%
+  as.data.frame() %>% column_to_rownames("variable") %>% 
+  lm(estimate_ldlc ~ estimate_group, data = .) %>% 
+  broom::augment() %>% 
+  filter(.std.resid > 1.5 | .std.resid < -1.5) %>% 
+  pull(".rownames")
+
+estimates_xy %>% 
+  filter(str_detect(variable, "%|/", negate = TRUE)) %>%
+  ggplot(aes(estimate_group, estimate_ldlc)) + 
+  geom_smooth(method = "lm", color = "black", size = 0.5) + 
+  geom_point(shape = 21, fill = "lightblue", color = "grey50", size = 3) + 
+  ggrepel::geom_text_repel(
+    data = . %>% filter(variable %in% high_resids_sub), 
+    aes(label = variable), size = 2.5, force = 0.5, box.padding = unit(0.1, "lines")) + 
+  theme_classic() + 
+  labs(x = "Difference between intervention and control group at end-of-study", 
+       y = "Association with LDL-C at baseline", 
+       caption = "Data: Percentages and ratios removed")
+```
+
+This figure indeed confirms our suspicion: the differences in the intervention group at end-of-study are strongly linked to the associations with LDL-C at baseline. Some key insights are: 
+
+- Variation in LDL-C explains a *large proportion* of the variation in the Nightingale metabolome
+- The Nightingale metabolome is *largely captured* by measuring the standard lipid panel (in this case, especially LDL-C)
+- A high-risk lipid profile, here defined by *continuously higher LDL-C* or *Nightingale metabolome*, can be rescued by improving the dietary fat quality
+
+
+
+
+## Conclusions
+
+This concludes the script. Some conclusions and take-homes: 
+
+- Forestplots are great visualization tools to effectively communicate patterns in your results
+- Forestplots can be designed to focus on patterns and uncertainty, rather than P values
+- Scatterplots of estimates (for the same variable) let's you test "global" hypotheses on your data
+- Such scatterplots circumvent the multiple testing issue
+
+
+
+## Session info
+
+To improve reproducibility, print out the session info for this script. 
+
+```{r}
+devtools::session_info()
+```
+

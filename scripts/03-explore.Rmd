@@ -1,0 +1,981 @@
+---
+title: "Data exploration and wrangling"
+subtitle: "NOMA intervention: Nightingale NMR metabolomics analyses"
+author: "Jacob J. Christensen"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+    toc_float: yes
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	eval = TRUE, 
+  echo = TRUE, 
+  message = TRUE, 
+  warning = FALSE, 
+	root.dir = normalizePath(".."),
+	dev = c("png", "cairo_pdf"), 
+	dpi = 300, 
+  fig.show = "hold", 
+	fig.align = "center", 
+	fig.keep = "all", 
+	fig.path = "../results/figures/03-explore-"
+)
+```
+
+
+## Info
+
+In this file, I will perform exploratory data analyses (EDA) and subsequent data wrangling to get the data in proper shape for downstream modeling. 
+
+### What is EDA?
+
+From [R4DS, chapter 7: Exploratory Data Analysis](https://r4ds.had.co.nz/exploratory-data-analysis.html#introduction-3): 
+
+> EDA is an iterative cycle. You:
+> 
+> 1. Generate questions about your data.
+> 2. Search for answers by visualising, transforming, and modelling your data.
+> 3. Use what you learn to refine your questions and/or generate new questions.
+> 
+> EDA is not a formal process with a strict set of rules. More than anything, EDA is a state of mind. During the initial phases of EDA you should feel free to investigate every idea that occurs to you. Some of these ideas will pan out, and some will be dead ends. As your exploration continues, you will home in on a few particularly productive areas that you’ll eventually write up and communicate to others.
+> 
+> EDA is an important part of any data analysis, even if the questions are handed to you on a platter, because you always need to investigate the quality of your data. Data cleaning is just one application of EDA: you ask questions about whether your data meets your expectations or not. To do data cleaning, you’ll need to deploy all the tools of EDA: visualisation, transformation, and modelling.
+
+
+## Load libraries
+
+First, we load necessary *libraries*. 
+
+```{r}
+library(tidyverse) # A whole bunch of packages necessary for data analysis
+library(broom) # To effectively clean up various objects
+library(ggforce) # Has some nice ggplot functionality
+```
+
+
+## Data
+
+Load *data* from the previous step. 
+
+```{r}
+variables <- readRDS(file = "../data/processed/variables.rds")
+annotation <- readRDS(file = "../data/processed/annotation.rds")
+data_comb <- readRDS(file = "../data/processed/data_comb.rds")
+```
+
+## Clinical data
+
+### Table 1
+
+#### `tableone`
+
+Use `tableone` to get a quick feeling on the population. 
+
+```{r}
+tableone::CreateTableOne(
+  data = data_comb %>% filter(time == "end"), 
+  vars = variables$clinic, 
+  strata = "group", 
+  factorVars = variables$clinic_fac
+)
+```
+
+The `CreateTableOne` function is part of the `tableone` package. It has a bunch of useful functionality. To learn more, check out [the tableone vignette](https://cran.r-project.org/web/packages/tableone/vignettes/introduction.html)! (A vignette is a short tutorial that gives you a feeling of how you can use a specific package and its functions; they are often very useful when well-written.)
+
+#### `dplyr`
+
+##### Numerical/continuous variables
+
+Alternatively, we can create our own table one. This gives us more flexibility about what type of summary statistics we wish to present. To this, we use the standard toolkit: `dplyr` and `tidyr`. 
+
+```{r}
+table_num <- data_comb %>% 
+  
+  # Remove the change; keep baseline and end-of-study only
+  filter(time != "delta") %>% 
+  
+  # Select the numerical clinical variables
+  select(time, group, variables$clinic_num) %>% 
+  
+  # Group by timepoint and group
+  group_by(time, group) %>% 
+  
+  # Initiate call to summarise
+  summarise_all(
+    
+    # Use the funs selector to tell summarise what summary stats you want
+    .funs = funs(
+      
+      # First add number of non-NAs; in other words, n for each variable
+      n = sum(!is.na(.)), 
+      
+      # Add a measure of that variables skewness
+      skewness = e1071::skewness, 
+      
+      # Then add a few other specific functions
+      mean, sd, median, IQR), 
+    
+    # Remove NAs for all these functions
+    na.rm = TRUE
+  
+    ) %>% 
+  
+  # Since the output is useless in the current format, 
+  # we start to clean up by pivoting
+  pivot_longer(cols = -one_of("time", "group"), names_to = "variable", values_to = "values") %>% 
+  
+  # Then split "variable" by the separator "_"
+  separate(col = variable, into = c("variable", "stat"), sep = "_") %>% 
+  
+  # And create a new column "key" by binding together "time", "group" and "stat" by that same separator "_"
+  unite(col = "key", time, group, stat) %>% 
+  
+  # Finally pivot wider again, using the newly formed "key" column
+  pivot_wider(names_from = "key", values_from = "values") %>% 
+  
+  # We might also want to clean up this a bit, into something a bit more readable
+  
+  # Start by rounding off numbers
+  mutate_at(
+    .vars = vars(matches("skewness|mean|sd|median|IQR")), 
+    .funs = round, 
+    digits = 2
+  ) %>% 
+  
+  # Then create text strings of both the measure of centrality and variance
+  mutate(
+    
+    # For baseline
+    `base_control, mean (SD)` = paste0(base_control_mean, " (", base_control_sd, ")"), 
+    `base_control, median (IQR)` = paste0(base_control_median, " (", base_control_IQR, ")"), 
+    
+    `base_intervention, mean (SD)` = paste0(base_intervention_mean, " (", base_intervention_sd, ")"), 
+    `base_intervention, median (IQR)` = paste0(base_intervention_median, " (", base_intervention_IQR, ")"), 
+    
+    # For end of study
+    `end_control, mean (SD)` = paste0(end_control_mean, " (", end_control_sd, ")"), 
+    `end_control, median (IQR)` = paste0(end_control_median, " (", end_control_IQR, ")"), 
+    
+    `end_intervention, mean (SD)` = paste0(end_intervention_mean, " (", end_intervention_sd, ")"), 
+    `end_intervention, median (IQR)` = paste0(end_intervention_median, " (", end_intervention_IQR, ")")
+    
+    ) %>% 
+  
+  select(variable, matches("_n|\\("))
+
+table_num
+
+openxlsx::write.xlsx(table_num, file = "../results/tables/table_num.xlsx")
+```
+
+And that's it, for the numerical variables. Now off to the categorical variables, or as R knows them: the factors.
+
+##### Factor/categorical variables
+
+```{r}
+table_fac <- data_comb %>% 
+  
+  # Remove the change; keep baseline and end-of-study only
+  filter(time != "delta") %>% 
+  
+  # Select the numerical clinical variables
+  select(time, group, variables$clinic_fac) %>% 
+  
+  # Pivot the variables to longer format
+  pivot_longer(cols = -one_of("time", "group"), names_to = "variable", values_to = "value") %>% 
+  
+  # Group by time, group and variable
+  group_by(time, group, variable) %>% 
+  
+  # Count occurences within each grouping
+  count(value) %>% 
+  
+  # Add percentage within each grouping
+  mutate(perc = round((n / sum(n)) * 100, digits = 1)) %>% 
+  
+  # Pivot those values longer too
+  pivot_longer(cols = n:perc, names_to = "names", values_to = "value2") %>% 
+  
+  # Unite the grouping keys
+  unite(col = "key", time, group, names) %>% 
+  
+  # Pivot wider to a format that's easy to read
+  pivot_wider(names_from = "key", values_from = "value2") %>% 
+  
+  # Add the final summary column for each timepoint and group
+  mutate(
+    
+    # For baseline
+    `base_control, n (%)` = paste0(base_control_n, " (", base_control_perc, ")"), 
+    `base_intervention, n (%)` = paste0(base_intervention_n, " (", base_intervention_perc, ")"), 
+    
+    # For end of study
+    `end_control, n (%)` = paste0(end_control_n, " (", end_control_perc, ")"), 
+    `end_intervention, n (%)` = paste0(end_intervention_n, " (", end_intervention_perc, ")")
+    
+  ) %>% 
+  
+  # Select only the final summaries
+  select(variable, value, matches("%"))
+
+table_fac
+```
+
+It's a bit long, but it works fine. 
+
+
+#### Tests
+
+We could add a simple test at the end, just to see if there are any differences between the groups at these two timepoints. Let's do that with a t-test. 
+
+##### Numerical/continuous variables
+
+This is how we do it for a single variable at baseline. 
+
+```{r}
+data_comb %>% 
+  filter(time == "base") %>% 
+  t.test(sbp ~ group, data = .) %>% 
+  broom::tidy() %>% 
+  pull("p.value")
+```
+
+Now let's scale up and do it for many variables at both timepoints.
+
+```{r}
+table_num_p <- data_comb %>% 
+  filter(time != "delta") %>% 
+  select(time, group, variables$clinic_num) %>% 
+  pivot_longer(cols = variables$clinic_num, names_to = "variable") %>% 
+  group_by(time, variable) %>%
+  nest() %>% 
+  mutate(
+    p.value = map_dbl(data, 
+                      ~t.test(value ~ group, data = .x) %>% 
+                        broom::tidy() %>% 
+                        pull("p.value"))
+    ) %>% 
+  select(-data) %>% 
+  pivot_wider(names_from = "time", values_from = "p.value") %>% 
+  select(variable, base_p.value = base, end_p.value = end)
+
+table_num_p
+```
+
+
+
+##### Factor/categorical variables
+
+For the factors, we use the Chi-Squared test. This is how we do it for one variable.
+
+```{r}
+x_gender <- data_comb %>% filter(time == "base") %>% pull("gender")
+y_group <- data_comb %>% filter(time == "base") %>% pull("group")
+
+chisq.test(x_gender, y_group) %>% 
+  broom::tidy() %>% 
+  pull("p.value")
+```
+
+And this is how we scale up. 
+
+```{r}
+table_fac_p <- data_comb %>% 
+  filter(time != "delta") %>% 
+  select(time, group, variables$clinic_fac) %>% 
+  pivot_longer(cols = variables$clinic_fac, names_to = "variable") %>% 
+  group_by(time, variable) %>%
+  nest() %>% 
+  mutate(
+    p.value = map_dbl(data, 
+                      ~chisq.test(x = .x$value, y = .x$group) %>% 
+                        broom::tidy() %>% 
+                        pull("p.value"))
+    ) %>% 
+  select(-data) %>% 
+  pivot_wider(names_from = "time", values_from = "p.value") %>% 
+  select(variable, base_p.value = base, end_p.value = end)
+
+table_fac_p
+```
+
+
+#### Export summary tables to Excel
+
+And finally, all these data can be saved to an Excel file so that you can prep it according to journal standards.
+
+```{r}
+list(
+  "numerical" = table_num, 
+  "numerical_p" = table_num_p, 
+  "factor" = table_fac, 
+  "factor_p" = table_fac_p
+) %>% 
+  openxlsx::write.xlsx(file = "../results/tables/table-clinic.xlsx", colWidths = "auto")
+```
+
+
+
+### Visualizations
+
+
+#### Univariate
+
+##### Numerical variables
+
+Let's look at BMI using a histogram. 
+
+```{r fig.width=8, fig.height=2.5}
+data_comb %>% 
+  ggplot(aes(bmi, fill = group)) + 
+  geom_histogram() + 
+  scale_fill_brewer(palette = "Set1") + 
+  facet_wrap(~time, scales = "free")
+```
+
+Is this better displayed with a density plot?
+
+```{r fig.width=8, fig.height=2.5}
+data_comb %>% 
+  ggplot(aes(bmi, color = group)) + 
+  geom_density() + 
+  scale_color_brewer(palette = "Set1") + 
+  facet_wrap(~time, scales = "free")
+```
+
+Perhaps - let's do a boxplot instead. 
+
+```{r fig.width=8, fig.height=2.5}
+data_comb %>% 
+  ggplot(aes(group, bmi, color = group)) + 
+  geom_boxplot() + 
+  scale_color_brewer(palette = "Set1") + 
+  facet_wrap(~time, scales = "free")
+```
+
+I like the boxplots. But some information is redundant now. Remove the colors from the boxes, and remove the legend. Also, add jittered points on top. Those we can color. 
+
+```{r fig.width=7, fig.height=2.5}
+data_comb %>% 
+  ggplot(aes(group, bmi)) + 
+  geom_boxplot(outlier.alpha = 0) + 
+  geom_point(aes(color = group), position = position_jitter(), show.legend = FALSE) + 
+  scale_color_brewer(palette = "Set1") + 
+  facet_wrap(~time, scales = "free")
+```
+
+Clean up the theme a bit.
+
+```{r fig.width=8, fig.height=2.5}
+data_comb %>% 
+  mutate(time = case_when(
+    time == "base" ~ "Baseline", 
+    time == "end" ~ "End of study", 
+    time == "delta" ~ "Change") %>% 
+      fct_relevel("Baseline", "End of study")) %>% 
+  ggplot(aes(group, bmi)) + 
+  geom_boxplot(outlier.alpha = 0) + 
+  geom_point(aes(color = group), position = position_jitter(), show.legend = FALSE) + 
+  scale_color_brewer(palette = "Set1") + 
+  facet_wrap(~time, scales = "free") + 
+  theme_classic() + 
+  theme(strip.background = element_blank()) + 
+  labs(x = "Group", y = "BMI (kg/m2)")
+```
+
+
+
+
+
+##### Factor variables
+
+```{r}
+data_comb %>% 
+  filter(time != "delta") %>% 
+  select(time, group, variables$clinic_fac) %>% 
+  pivot_longer(cols = -one_of("time", "group")) %>% 
+  group_by(time, group, name) %>% 
+  count(value) %>% 
+  mutate(perc = n/sum(n) * 100) %>% 
+  ggplot(aes(value, perc, fill = group)) + 
+  geom_col(position = position_dodge()) + 
+  scale_fill_brewer(palette = "Set1") + 
+  coord_flip() + 
+  facet_wrap(~name, scales = "free") + 
+  labs(x = NULL, y = "Percentage (%)")
+```
+
+
+##### Change from baseline to end-of-study
+
+```{r clinic-ldl-spaghetti}
+summary_ldlc <- data_comb %>% 
+  filter(time %in% c("base", "end")) %>% 
+  group_by(time, group) %>% 
+  summarize(y = mean_cl_normal(ldlc)[[1]], 
+            ymin = mean_cl_normal(ldlc)[[2]], 
+            ymax = mean_cl_normal(ldlc)[[3]])
+
+data_comb %>% 
+  filter(time %in% c("base", "end")) %>% 
+  ggplot(aes(time, ldlc)) + 
+  geom_line(aes(group = id), color = "grey") + 
+  
+  # I can either add the manually calculated summary stats
+  geom_line(data = summary_ldlc, aes(y = y, color = group, group = group)) +
+  geom_pointrange(data = summary_ldlc, aes(y = y, ymin = ymin, ymax = ymax, color = group)) +
+  
+  # Or use a pair of simple statistical summary functions
+  stat_summary(aes(color = group, group = group), fun.y = "mean", geom = "line") + 
+  stat_summary(aes(color = group, group = group), fun.data = "mean_cl_normal") + 
+  
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  facet_wrap(~group) + 
+  theme_classic() + 
+  theme(strip.background = element_blank()) + 
+  labs(x = NULL, y = "LDL-C (mmol/L)")
+```
+
+Or by a simple waterfall chart.
+
+```{r clinic-ldlc-waterfall}
+data_comb %>% 
+  filter(time == "delta") %>% 
+  mutate(id.row = row_number() %>% factor()) %>%  
+  ggplot(aes(fct_reorder(id.row, ldlc), ldlc)) + 
+  geom_col(aes(fill = group)) + 
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  theme_classic() + 
+  theme(axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank()) + 
+  labs(x = NULL, y = "LDL-C (mmol/L)")
+```
+
+
+
+```{r clinic-multi-spaghetti, fig.width=10, fig.height=20}
+data_comb %>% 
+  filter(time %in% c("base", "end")) %>% 
+  select(id, time, group, height:vitd3) %>% 
+  pivot_longer(cols = -c(id:group), names_to = "variables", values_to = "value") %>% 
+  left_join(annotation$clinic, by = c("variables" = "name.short")) %>% 
+  mutate(name.unit = paste0(name.full, " (", unit, ")")) %>% 
+  ggplot(aes(time, value)) + 
+  geom_line(aes(group = id), color = "grey", size = 0.2) + 
+  
+  stat_summary(aes(color = group, group = group), fun.y = "mean", geom = "line", 
+               position = position_dodge(width = 0.1)) + 
+  stat_summary(aes(color = group, group = group), fun.data = "mean_cl_normal", 
+               position = position_dodge(width = 0.1)) + 
+  
+  scale_color_brewer(name = NULL, palette = "Set1") + 
+  facet_wrap(~ name.unit, ncol = 4, scales = "free") + 
+  theme_classic() + 
+  theme(strip.background = element_blank()) + 
+  labs(x = NULL, y = NULL)
+```
+
+```{r clinic-multi-waterfall, fig.width=10, fig.height=20}
+data_comb %>% 
+  filter(time == "delta") %>% 
+  select(id, time, group, height:vitd3) %>% 
+  pivot_longer(cols = -c(id:group), names_to = "variables", values_to = "value") %>% 
+  filter(variables != "height") %>% 
+  left_join(annotation$clinic, by = c("variables" = "name.short")) %>% 
+  arrange(desc(value)) %>% 
+  mutate(name.unit = paste0(name.full, " (", unit, ")"), 
+         id.row = row_number() %>% factor()) %>% 
+  ggplot(aes(fct_reorder(id.row, value), value, fill = group)) + 
+  geom_col() + 
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  facet_wrap(~name.unit, ncol = 4, scales = "free") +
+  theme_classic() + 
+  theme(strip.background = element_blank(), 
+        axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank()) + 
+  labs(x = NULL, y = NULL)
+```
+
+
+#### Bivariate
+
+##### Correlations/heatmap
+
+```{r clinic-heatmap, fig.width=10, fig.height=7}
+data_comb %>% 
+  filter(time == "base") %>% 
+  select(variables$clinic_num) %>% 
+  cor(use = "pairwise.complete.obs") %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = ".rownames") %>% 
+  pivot_longer(-.rownames, names_to = ".colnames", values_to = "r") %>% 
+  mutate(r = if_else(r == 1, true = NA_real_, false = r)) %>% 
+  left_join(annotation$clinic, by = c(".rownames" = "name.short")) %>% 
+  left_join(annotation$clinic, by = c(".colnames" = "name.short")) %>% 
+  ggplot(aes(
+    x = fct_reorder(name.full.x, order.variable.x), 
+    y = fct_reorder(name.full.y, -order.variable.y))) + 
+  geom_tile(aes(fill = r), color = "grey90") + 
+  scale_fill_distiller(name = "Correlation \ncoefficient", palette = "RdBu", na.value = "grey70") + 
+  facet_grid(cols = vars(fct_reorder(facet.group.x, facet.order.x)), 
+             rows = vars(fct_reorder(facet.group.y, facet.order.y)),  
+             scales = "free", space = "free", 
+             labeller = label_wrap_gen(width = 10)) + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        strip.text.y = element_text(angle = 0)) + 
+  labs(x = NULL, y = NULL)
+```
+
+
+##### Time-based
+
+Let's plot the variation in vitamin D over the course of the year. We assume that there will be a cyclic variation between summer and winter time.
+
+```{r time-vitd}
+data_comb %>% 
+  select(id, time, date, vitd) %>% 
+  filter(time %in% c("base", "end")) %>% 
+  ggplot(aes(date, vitd)) + 
+  geom_line(aes(group = id), color = "grey80") + 
+  geom_point(color = "grey60") + 
+  geom_smooth(color = "black") + 
+  scale_color_brewer(palette = "Set1") + 
+  scale_x_date(date_labels = "%b %Y") + 
+  theme_classic() + 
+  labs(x = NULL, y = "Vitamin D (nmol/L)")
+```
+
+And indeed there is! What about all the other variables?
+
+```{r time-all, fig.width=10, fig.height=20}
+data_comb %>% 
+  select(id, time, date, variables$clinic_num) %>% 
+  filter(time %in% c("base", "end")) %>% 
+  pivot_longer(cols = variables$clinic_num) %>% 
+  left_join(annotation$clinic, by = c("name" = "name.short")) %>% 
+  ggplot(aes(date, value)) + 
+  geom_line(aes(group = id), color = "grey80") + 
+  geom_point(color = "grey60") + 
+  geom_smooth(color = "black") + 
+  scale_color_brewer(palette = "Set1") + 
+  scale_x_date(date_labels = "%b %Y") + 
+  facet_wrap(~ name.full, ncol = 4, scales = "free") + 
+  theme_classic() + 
+  theme(strip.background = element_blank()) + 
+  labs(x = NULL, y = NULL)
+```
+
+
+
+
+#### Multivariate
+
+##### PCA
+
+Run PCA for clinical variables at baseline. 
+
+```{r}
+pca_clinic <- data_comb %>% 
+  filter(time == "base") %>% 
+  select(id, variables$clinic) %>% 
+  as.data.frame() %>% 
+  column_to_rownames(var = "id") %>% 
+  select_if(is.numeric) %>% 
+  drop_na() %>% 
+  prcomp(center = TRUE, scale = TRUE)
+
+# From broom website: '"u", "samples", "scores", or "x": returns information about the map from the original space into principle components space.'
+tidy(pca_clinic, matrix = "samples")
+
+# From broom website: '"v", "rotation", "loadings" or "variables": returns information about the map from principle components space back into the original space.'
+tidy(pca_clinic, matrix = "variables")
+
+# From broom website: '"d" or "pcs": returns information about the eigenvalues.'
+tidy(pca_clinic, matrix = "pcs")
+```
+
+See [broom website](https://broom.tidyverse.org/reference/tidy.prcomp.html) for more information. 
+
+Let's plot a few of the standard PCA plot: 
+
+- Scree plot
+- Scores plot ("samples")
+- Loadings plot ("variables")
+
+```{r pca-scree-clin, fig.width=9, fig.height=3}
+tidy(pca_clinic, matrix = "pcs") %>% 
+  pivot_longer(cols = c("std.dev", "percent", "cumulative")) %>% 
+  ggplot(aes(PC, value)) + 
+  geom_line() + 
+  facet_wrap(~ name, scales = "free") + 
+  theme_minimal()
+```
+
+```{r pca-scores-clin}
+tidy(pca_clinic, matrix = "samples") %>% 
+  mutate(PC = paste0("PC", PC), 
+         row = as.character(row) %>% as.numeric()) %>% 
+  pivot_wider(names_from = "PC", values_from = "value") %>% 
+  left_join(select(data_comb, id, group), by = c("row" = "id")) %>% 
+  ggplot(aes(PC1, PC2, color = group)) + 
+  geom_hline(yintercept = 0, color = "grey", linetype = "dashed") + 
+  geom_vline(xintercept = 0, color = "grey", linetype = "dashed") + 
+  geom_point() + 
+  stat_ellipse(linetype = "dashed") + 
+  scale_color_brewer(name = NULL, palette = "Set1") + 
+  theme_classic()
+```
+
+```{r pca-loadings-clin, fig.width=8, fig.height=4.5}
+tidy(pca_clinic, matrix = "variables") %>% 
+  mutate(PC = paste0("PC", PC)) %>% 
+  pivot_wider(names_from = "PC", values_from = "value") %>% 
+  left_join(annotation$clinic, by = c("column" = "name.short")) %>% 
+  ggplot(aes(PC1, PC2)) + 
+  geom_hline(yintercept = 0, color = "grey", linetype = "dashed") + 
+  geom_vline(xintercept = 0, color = "grey", linetype = "dashed") + 
+  geom_text(aes(label = column, color = facet.group)) + 
+  scale_color_brewer(name = NULL, palette = "Dark2") + 
+  theme_classic()
+```
+
+
+
+##### Clustering
+
+Add clustering figures??
+
+
+
+## Nightingale data
+
+### Numerical summaries
+
+First, get a quick overview of the distribution of means and SDs for all variables in the Nightingale dataset. Also, calculate the number of participants per group to detect a 10 or 20 % difference with 80 or 90 % power. 
+
+```{r}
+mean_sd <- data_comb %>% 
+  filter(time == "base") %>% 
+  select(variables$nightingale) %>% 
+  summarise_all(.funs = funs(`_mean` = mean, `_sd` = sd), na.rm = TRUE) %>% 
+  pivot_longer(everything()) %>%
+  separate(name, into = c("variable", "key"), sep = "__") %>% 
+  pivot_wider(names_from = "key", values_from = "value") %>% 
+  left_join(select(annotation$nightingale, variable = name.short, name.full, unit), by = "variable") %>% 
+  select(variable, description = name.full, unit, mean, sd) %>% 
+  mutate(n_power80_diff10perc = map2_dbl(mean, sd, ~power.t.test(power = 0.80, delta = .x * 0.10, sd = .y) %>% pluck("n") %>% ceiling()), 
+         n_power90_diff10perc = map2_dbl(mean, sd, ~power.t.test(power = 0.90, delta = .x * 0.10, sd = .y) %>% pluck("n") %>% ceiling()), 
+         n_power80_diff20perc = map2_dbl(mean, sd, ~power.t.test(power = 0.80, delta = .x * 0.20, sd = .y) %>% pluck("n") %>% ceiling()), 
+         n_power90_diff20perc = map2_dbl(mean, sd, ~power.t.test(power = 0.90, delta = .x * 0.20, sd = .y) %>% pluck("n") %>% ceiling()))
+
+mean_sd
+mean_sd %>% openxlsx::write.xlsx("../results/tables/mean-sd.xlsx")
+```
+
+
+### Visualizations
+
+#### Numerical summaries
+
+Plot mean and SD for each variable. 
+
+```{r mean-sd, fig.width=15, fig.height=10}
+mean_sd %>% 
+  arrange(desc(mean)) %>% 
+  mutate(facet = rep(1:3, each = 225/3)) %>% 
+  ggplot(aes(fct_reorder(variable, mean), mean)) + 
+  geom_pointrange(aes(ymin = mean - sd, ymax = mean + sd)) + 
+  coord_flip() + 
+  facet_wrap(~ facet, scales = "free") + 
+  theme_classic() + 
+  theme(strip.background = element_blank(), 
+        strip.text = element_blank()) + 
+  labs(x = NULL, y = "Mean (SD)")
+```
+
+Plot the power for each variable across the four calculated power-diff combinations. 
+
+```{r n-power, fig.width=7, fig.height=5}
+mean_sd_prepped <- mean_sd %>% 
+  select(variable, matches("power")) %>% 
+  pivot_longer(matches("power"))
+
+mean_sd_prepped_mean <- mean_sd_prepped %>% 
+  group_by(name) %>% 
+  summarise(mean = mean(value) %>% round())
+
+mean_sd_prepped %>% 
+  ggplot(aes(name, value)) + 
+  geom_boxplot(color = "grey60", alpha = 0.4, outlier.alpha = 0) + 
+  geom_point(aes(color = name), position = position_jitter(width = 0.2), alpha = 0.6, 
+             show.legend = FALSE) + 
+  geom_text(data = mean_sd_prepped_mean, aes(y = -75, label = paste0("Mean n = ", mean))) + 
+  scale_color_brewer(palette = "Paired") +
+  theme_classic() + 
+  theme(strip.background = element_blank(), 
+        legend.position = "bottom") + 
+  labs(x = NULL, y = "n (per group)")
+
+ggsave("../results/figures/n-power.png", width = 7, height = 5)
+```
+
+
+
+#### Univariate
+
+
+
+#### Bivariate
+
+##### Correlations/heatmap
+
+An overview heatmap. 
+
+```{r nightingale-pheatmap, fig.width=10, fig.height=8}
+data_comb %>% 
+  filter(time == "base") %>% 
+  select(variables$nightingale) %>% 
+  cor(use = "pairwise.complete.obs") %>% 
+  pheatmap::pheatmap(show_rownames = FALSE, show_colnames = FALSE)
+```
+
+Or we can ask specific questions: 
+
+1) Does Nightingale 'standard' mesurements correlate with clinical biochemistry?
+
+```{r clin-vs-night, fig.width=10, fig.height=8}
+data_comb %>% 
+  filter(time == "base") %>% 
+  ggplot(aes(.panel_x, .panel_y)) + 
+  geom_point() + 
+  geom_smooth(se = FALSE) + 
+  facet_matrix(cols = vars(tc, tg, ldlc, hdlc, apob, apoa1), 
+               rows = vars(`Serum-C`, `Serum-TG`, `LDL-C`, `HDL-C`, ApoB, ApoA1)) + 
+  theme_bw() + 
+  labs(x = "Clinical measurements", y = "Nightingale measurements")
+```
+
+2) Are the specific lipid species really just reflective of the *Particle concentration* or *Total lipids*?
+
+```{r particles-vs-lipids, fig.width=14, fig.height=10}
+data_comb %>% 
+  filter(time == "base") %>% 
+  ggplot(aes(.panel_x, .panel_y)) + 
+  geom_point() + 
+  geom_smooth(se = FALSE) + 
+  facet_matrix(cols = vars(matches("-P$")), 
+               rows = vars(matches("-L$"))) + 
+  theme_bw() + 
+  theme(strip.text.y = element_text(angle = 0))
+```
+
+
+```{r}
+data_night_cor <- data_comb %>% 
+  filter(time == "base") %>% 
+  select(variables$nightingale) %>% 
+  cor(use = "pairwise.complete.obs") %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "var1") %>% 
+  pivot_longer(cols = -var1, names_to = "var2", values_to = "r")
+```
+
+Let's look at the distribution of correlation coefficients for all variable combinations.
+
+```{r}
+data_night_cor %>% 
+  ggplot(aes(r)) + 
+  geom_histogram(bins = 100)
+```
+
+Those that are exactly 1 is of course the combination of the *same* variables. Let's split into types of variables. 
+
+```{r}
+data_night_cor %>% 
+  left_join(annotation$nightingale, by = c("var1" = "name.short")) %>% 
+  left_join(annotation$nightingale, by = c("var2" = "name.short"), suffix = c("_var1", "_var2")) %>% 
+  filter(unit_var1 %in% c("%", "mmol/l"), unit_var2 %in% c("%", "mmol/l")) %>% 
+  ggplot(aes(r)) + 
+  geom_histogram() + 
+  facet_grid(rows = vars(unit_var1), cols = vars(unit_var2)) + 
+  labs(x = "Correlation coefficient", y = "Count")
+```
+
+
+```{r}
+data_night_cor_particle <- data_night_cor %>% 
+  filter(str_detect(var1, "-P$")) %>% 
+  left_join(select(annotation$nightingale, name.short, size), by = c("var2" = "name.short")) %>% 
+  filter(!is.na(size)) %>% select(-size) %>% 
+  mutate(var1 = str_replace_all(var1, "-P", ""))
+
+data_night_cor_lipids <- data_night_cor %>% 
+  filter(str_detect(var1, "-L$")) %>% 
+  left_join(select(annotation$nightingale, name.short, size), by = c("var2" = "name.short")) %>% 
+  filter(!is.na(size)) %>% select(-size) %>% 
+  mutate(var1 = str_replace_all(var1, "-L", ""))
+
+data_night_cor_comb <- left_join(
+  data_night_cor_particle, 
+  data_night_cor_lipids, 
+  by = c("var1", "var2"), 
+  suffix = c("_particles", "_lipids")
+)
+```
+
+```{r}
+data_night_cor_comb %>% 
+  ggplot(aes(r_particles, r_lipids)) + 
+  geom_point() + 
+  theme_classic() + 
+  labs(x = "Correlation between 'Particle concentration' and lipid species", 
+       y = "Correlation between 'Total lipids' and lipid species")
+```
+
+```{r}
+data_night_cor_species <- data_night_cor %>% 
+  left_join(annotation$nightingale, by = c("var1" = "name.short")) %>% 
+  left_join(annotation$nightingale, by = c("var2" = "name.short"), suffix = c("_var1", "_var2")) %>% 
+  filter(!is.na(size_var1), !is.na(size_var2), 
+         str_detect(var1, "-P$|-L$", negate = TRUE), 
+         str_detect(var2, "-P$|-L$", negate = TRUE)
+         ) %>% 
+  mutate(var1 = str_replace_all(var1, "_%", ""), 
+         var2 = str_replace_all(var2, "_%", ""), 
+         type_var1 = abbreviate(type_var1, minlength = 2L) %>% str_to_upper(), 
+         type_var2 = abbreviate(type_var2, minlength = 2L) %>% str_to_upper())
+```
+
+```{r cor-lipid-species, fig.width=15, fig.height=12}
+data_night_cor_species %>% 
+  ggplot(aes(x = fct_reorder(var1, name.order_var1), 
+             y = fct_reorder(var2, -name.order_var2), fill = r)) + 
+  geom_tile() + 
+  scale_fill_gradient2() + 
+  facet_grid(cols = vars(fct_rev(unit_var1), type_var1), 
+             rows = vars(fct_rev(unit_var2), type_var2), 
+             scales = "free", space = "free") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8), 
+        axis.text.y = element_text(size = 8)) +
+  labs(x = NULL, y = NULL)
+```
+
+Clearly, lipid species associate strongly with each other for absolute values, but not for relative values (%). 
+
+
+
+
+
+#### Multivariate
+
+##### PCA
+
+Run PCA for all Nightingale variables at baseline and end-of-study. 
+
+```{r}
+# Baseline
+pca_nightingale_base <- data_comb %>% 
+  filter(time == "base") %>% 
+  select(id, variables$nightingale) %>% 
+  as.data.frame() %>% 
+  column_to_rownames(var = "id") %>% 
+  select_if(is.numeric) %>% 
+  drop_na() %>% 
+  prcomp(center = TRUE, scale = TRUE)
+
+# End-of-study
+pca_nightingale_end <- data_comb %>% 
+  filter(time == "end") %>% 
+  select(id, variables$nightingale) %>% 
+  as.data.frame() %>% 
+  column_to_rownames(var = "id") %>% 
+  select_if(is.numeric) %>% 
+  drop_na() %>% 
+  prcomp(center = TRUE, scale = TRUE)
+```
+
+Again, see [the broom website](https://broom.tidyverse.org/reference/tidy.prcomp.html) for more information. 
+
+Let's plot a few of the standard PCA plot: 
+
+- Scree plot
+- Scores plot ("samples")
+
+It's no use plotting the loadings plot ("variables"), since there are so many variables. We would have drastic overplotting as a result. 
+
+```{r pca-scree-night, fig.width=9, fig.height=3}
+tidy(pca_nightingale_base, matrix = "pcs") %>% 
+  pivot_longer(cols = c("std.dev", "percent", "cumulative")) %>% 
+  ggplot(aes(PC, value)) + 
+  geom_line() + 
+  facet_wrap(~ name, scales = "free") + 
+  theme_minimal()
+```
+
+```{r pca-scores-night, fig.width=8, fig.height=4}
+pca_nightingale_scores_prep <- bind_rows(
+  tidy(pca_nightingale_base, matrix = "samples") %>% 
+    mutate(PC = paste0("PC", PC), 
+           row = as.character(row) %>% as.numeric(), 
+           time = "base") %>% 
+    filter(PC %in% c("PC1", "PC2")) %>% 
+    pivot_wider(names_from = "PC", values_from = "value"), 
+  tidy(pca_nightingale_end, matrix = "samples") %>% 
+    mutate(PC = paste0("PC", PC), 
+           row = as.character(row) %>% as.numeric(), 
+           time = "end") %>% 
+    filter(PC %in% c("PC1", "PC2")) %>% 
+    pivot_wider(names_from = "PC", values_from = "value")) %>% 
+  left_join(select(data_comb, id, group, time), by = c("row" = "id", "time"))
+
+pca_nightingale_scores_prep %>% 
+  ggplot(aes(PC1, PC2)) + 
+  geom_hline(yintercept = 0, color = "grey", linetype = "dashed") + 
+  geom_vline(xintercept = 0, color = "grey", linetype = "dashed") + 
+  geom_point(aes(color = time)) + 
+  stat_ellipse(aes(color = time), linetype = "dashed") +
+  scale_color_brewer(name = NULL, palette = "Dark2") + 
+  facet_wrap(~ group) + 
+  theme_classic() + 
+  theme(strip.background = element_blank(), 
+        legend.position = "top")
+```
+
+
+
+##### Clustering
+
+Here I can add something about clustering techniques.
+
+
+
+
+
+
+## Conclusions
+
+This concludes the script. Some conclusions and take-homes: 
+
+- *ggplot2 is great for EDA*!
+- EDA is *essential* to truly understand your data
+- Spend time *playing around* with different visualizations
+- Do you have a hypothesis? Follow that through visualizations of *raw data* and/or *analyses results*!
+
+
+
+
+## Session info
+
+To improve reproducibility, print out the session info for this script. 
+
+```{r}
+devtools::session_info()
+```
+
