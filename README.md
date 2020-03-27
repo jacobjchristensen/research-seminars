@@ -8,28 +8,23 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 
 ## Documentation
 
-### 2020-03-23
+### 2020-04-13
 
-- Worked through the `pivot_` functions from `tidyr`. 
-
-### 2020-03-30
-
-Topic: Regularization with LASSO and ridge. 
-
+Topic: TBA
 
 ### 2020-04-06
 
 EASTER
 
-### 2020-04-13
+### 2020-03-30
 
-Topic: TBA
+Topic: Regularization with LASSO and ridge. 
 
-### 2020-04-20
+### 2020-03-23
 
-Topic: TBA
-
-### 2020-04-27
-
-Topic: TBA
+- Worked through the `pivot_` functions from `tidyr`. 
+- These can be very useful to take control over repeated measures. 
+- They are also very effective for visualizations: 
+  - Visualize distributions for multiple variables. 
+  - Visualize small multiples (subsets of data over many small panels/facets)
 
