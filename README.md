@@ -10,15 +10,27 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 
 ### 2020-04-13
 
-Topic: TBA
+*Topic*: TBA
 
 ### 2020-04-06
 
-EASTER
+*Topic*: RStudio cheatsheets: data import (`tidyr`)
+
 
 ### 2020-03-30
 
-Topic: Regularization with LASSO and ridge. 
+*Topic*: Regularization with LASSO and ridge. 
+
+- Discussed penalization principles. 
+- Discussed LASSO, ridge and the standard variable selection procedures (forward/backward stepwise). 
+- Trevor Hastie and Junyang Qian has [a great vignette](https://web.stanford.edu/~hastie/glmnet/glmnet_alpha.html) on the `glmnet` package. 
+- Chapter six in *An Introduction to Statistical Learning - with Applications in R* by James, Witten, Hastie & Tibshirani is a great resource for the `glmnet` package and LASSO/ridge regression. 
+- It is [free online](http://faculty.marshall.usc.edu/gareth-james/ISL/). 
+- There are also some [available videos](https://www.dataschool.io/15-hours-of-expert-machine-learning-videos/) that can take you though the material. 
+- It is somewhat unclear how we should optimally use these procedures in statistical inference. 
+- They can probably be used in concert with traditional methods to select the most important variables in a larger set of potential variables. That is, a more data-driven type of variable selection (shrinkage). This would be similar to use of PCA to account for correlation between variables, although PCA doesn't retain that much interpretability. 
+
+
 
 ### 2020-03-23
 
