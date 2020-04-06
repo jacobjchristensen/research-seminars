@@ -17,6 +17,10 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 
 *Topic*: RStudio cheatsheets: data transformation (`dplyr`)
 
+- Key functions from cheatsheet
+- Perform log transformation and normalization (to standard normal distribution) in R and Excel
+
+
 ### 2020-04-06
 
 *Topic*: RStudio cheatsheets: data import (`tidyr`)
