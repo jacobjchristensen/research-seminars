@@ -8,13 +8,33 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 
 ## Documentation
 
-### 2020-04-13
+### 2020-04-20
 
 *Topic*: TBA
+
+
+### 2020-04-14
+
+*Topic*: RStudio cheatsheets: data transformation (`dplyr`)
 
 ### 2020-04-06
 
 *Topic*: RStudio cheatsheets: data import (`tidyr`)
+
+- Discussed the `read_*` functions, with emphasis on `read_csv`. 
+- We can specify which type of delimiter we have with `read_delim` and the delim argument. 
+- Get more info about a `readr` function with ?, like so: `?read_csv`, or at [the tidyverse documentation website](https://readr.tidyverse.org/). 
+- Use `col_types = cols()` to specify column types directly in the call to the readr function. 
+- Otherwise, change column types with a subsequent mutate call; you can also use some variant of purrr::modify. 
+- `haven` is great to read (and write) SPSS (.sav) and STATA (.dta) files. 
+- Use `read_sav` or `read_spss` to read SPSS files. 
+- Check if a variable is labelled (with SPSS labels) using the `haven::is.labelled` predicate function.
+- Convert from labelled SPSS variable to R factor with the `haven::as_factor` function.
+- Pull out other attributes from an SPSS file/object with the `attributes` function. 
+- Be careful with converting stuff to factors. Under the hood, a factor is just an integer. 
+- Use `drop_na` to drop rows with missing entries, or supply a variable name to remove rows with missing entries for just that variable. 
+- Replace missing entries with something using the `replace_na` function. 
+- This pattern is a recurring theme: `gather`/`pivot_longer` - `separate` - `unite` - `spread`/`pivot_wider`. 
 
 
 ### 2020-03-30
