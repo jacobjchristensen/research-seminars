@@ -79,6 +79,11 @@ mpg %>%
 
 For each unit increase in `displ`, `cyl` is reduced by 0.63 standard deviations. 
 
+Lastly, we could do this log-scale transformation in Excel too. Export: 
+
+```{r}
+openxlsx::write.xlsx(mpg, "../data/mpg.xlsx")
+```
 
 
 
