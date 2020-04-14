@@ -1,0 +1,86 @@
+---
+title: "log-scale"
+author: "Jacob J. Christensen"
+date: "14 4 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  fig.width=3, 
+  fig.height=2
+  )
+```
+
+In this file, we will log transform and scale a right-skewed variable. We will use `dplyr` functions.
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+mpg %>% 
+  ggplot(mapping = aes(x = cty)) + 
+  geom_histogram()
+
+mpg %>% 
+  ggplot(aes(cty)) + 
+  geom_density()
+```
+
+Log transform the variable. 
+
+```{r}
+mpg %>% 
+  mutate(cty = log(cty)) %>% 
+  ggplot(aes(cty)) + 
+  geom_histogram()
+
+mpg %>% 
+  mutate(cty = log(cty)) %>% 
+  ggplot(aes(cty)) + 
+  geom_density()
+```
+
+Let's scale too. 
+
+```{r}
+mpg %>% 
+  mutate(cty = log(cty) %>% scale()) %>% 
+  ggplot(aes(cty)) + 
+  geom_histogram()
+
+mpg %>% 
+  mutate(cty = log(cty) %>% scale()) %>% 
+  ggplot(aes(cty)) + 
+  geom_density()
+```
+
+Check association between displ and cyl. 
+
+```{r}
+mpg %>% 
+  mutate(cty = log(cty) %>% scale()) %>%
+  ggplot(aes(displ, cty)) + 
+  geom_point() + 
+  geom_smooth(color = "black") + 
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+Do a regression (that describes the blue line in the plot). 
+
+```{r}
+mpg %>% 
+  mutate(cty = log(cty) %>% scale()) %>% 
+  lm(cty ~ displ, data = .) %>% 
+  broom::tidy(conf.int = TRUE)
+```
+
+For each unit increase in `displ`, `cyl` is reduced by 0.63 standard deviations. 
+
+
+
+
+
+---

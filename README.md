@@ -10,15 +10,43 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 
 ### 2020-04-20
 
-*Topic*: TBA
+*Topic*: RStudio cheatsheets: apply functions (`purrr`)
+
+- Key functions from cheatsheet
+  
+  - `map`/`map2`/`pmap` and `_*` friends
+  - `pluck`, `keep`, `discard`
+  - `modify`
+
 
 
 ### 2020-04-14
 
 *Topic*: RStudio cheatsheets: data transformation (`dplyr`)
 
-- Key functions from cheatsheet
-- Perform log transformation and normalization (to standard normal distribution) in R and Excel
+1. Key functions from cheatsheet (Vegard)
+
+- Went through key function, including: 
+  
+  - `pull`
+  - `distinct`
+  - `slice`
+  - `select` and helper functions
+  - `rename`
+  - `mutate`
+  - `filter` and helper functions
+  - `arrange`
+  - `group_by`
+  - `summarise`
+
+Code in `200414-Dplyr.rmd`. 
+
+There are also a few new functions coming in [`dplyr` 1.0.0](https://www.tidyverse.org/blog/2020/04/dplyr-1-0-0-rowwise/). We briefly discussed a few of these, including new features for `summarise` using `across`. 
+
+
+2. Perform log transformation and normalization (to standard normal distribution) (Jacob)
+
+Code in `log-scale.Rmd`
 
 
 ### 2020-04-06

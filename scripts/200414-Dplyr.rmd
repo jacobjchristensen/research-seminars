@@ -1,0 +1,206 @@
+---
+title: "200414 Dplyr"
+author: "Vegard Lysne"
+date: "7 4 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+```
+
+# Select dataset
+```{r include = F}
+library(help = "datasets")
+datasets
+
+```
+
+# Select variables/columns
+1. Extract **vector** from tibble (pull)
+2. **Subset** tibble (select)
+3. select-helpers
+
+## Extract vector
+```{r}
+manu <- mpg %>% 
+  distinct(manufacturer) %>% 
+  pull(manufacturer)
+
+mpg %>% 
+  pull(displ) %>% 
+  range()
+
+mpg[["displ"]]
+```
+
+## Subset/select variable
+```{r}
+mpg %>% 
+  select(cyl, manufacturer, model)
+
+mpg %>% 
+  select_if(is.numeric)
+```
+
+## Select-helpers
+- from tidyselect
+```{r}
+mpg %>% select(starts_with("c"))
+
+mpg %>% select(ends_with("l"))
+
+mpg %>% select(contains("isp"))
+
+mpg %>% select(cyl, everything())
+
+x <- c("manufacturer", "cyl", "model")
+
+mpg %>% select(all_of(c("manufacturer", "cyl")))
+
+mpg %>% select(starts_with("c"), everything())
+```
+
+
+# Create new or modify variables
+- vectorised functions returns a vector of equal length
+```{r}
+mpg %>% 
+  rename(newname = manufacturer)
+
+mpg %>% select(newname = manufacturer, everything())
+
+mpg %>% select(manufacturer, model, displ)
+
+mpg %>% 
+  mutate(cyl2 = cyl*2,
+         cyl3 = cyl*3,
+         cyl4 = cyl2*cyl3) %>%  select(cyl, cyl2, cyl3, cyl4, everything())
+
+mpg %>% 
+  mutate(newvar = 1, 
+         anothernewvar = 2, 
+         third = newvar + anothernewvar)
+
+
+mpg %>% 
+  mutate(displ = log(displ),
+         displ = scale(displ))
+```
+
+# Select cases/rows
+- filter rows if expression = TRUE
+
+## Filter
+- logical operators (==, !=, >, <)
+- logical tests (is.na, !is.na, between(), etc)
+```{r}
+mpg %>% filter(cyl == 4)
+mpg %>% filter(cyl != 4)
+mpg %>% filter(cyl >= 4)
+mpg %>% filter(displ > mean(displ))
+
+mpg %>% filter(manufacturer == "audi")
+mpg %>% filter(between(displ, 3, 5))
+mpg %>% filter(str_detect(manufacturer, "au"))
+```
+
+## Filter on more conditions
+- Boolean operators (&, |)
+```{r}
+mpg %>% 
+  filter(manufacturer == "audi" & cyl == 4)
+
+mpg %>% 
+  filter(manufacturer == "audi" | cyl == 4 | displ > 5)
+
+vect <- c("audi", "dodge")
+mpg %>% 
+  filter(manufacturer %in% c("audi", "dodge"))
+
+mpg %>% 
+  filter(!(manufacturer %in% c("audi", "dodge")))
+
+mpg %>% filter(!is.na(cyl))
+```
+
+## Arrange by value
+-desc() for decreasing order
+```{r}
+mpg %>% 
+  arrange(year, cyl, desc(displ)) %>% 
+  select(year, cyl, displ) %>%
+  group_by(year, cyl) %>%
+  slice(1)
+
+mpg %>% 
+  arrange(year, desc(cyl), manufacturer)
+```
+
+
+
+## Subset rows by position
+```{r}
+mpg %>% slice(1)
+mpg %>% slice(1:5)
+```
+
+# Group dataset
+```{r}
+mpg %>% 
+  group_by(manufacturer) %>% 
+  str()
+
+mpg %>% 
+  group_by(manufacturer) %>% 
+  slice(1)
+
+mpg %>% 
+  group_by(manufacturer, model) %>% 
+  slice(1:2)
+```
+
+# Summarise
+```{r}
+
+mpg %>%
+  group_by(year, cyl) %>% 
+  summarise(quant = quantile(displ, probs = c(0.25, 0.5, 0.75)),
+            probs = c("0.25", "0.5", "0.75")) 
+
+
+mpg %>% 
+  summarise(mean_displ = mean(displ),
+            sd_displ = sd(displ))
+
+mpg %>% 
+  group_by(manufacturer) %>% 
+  summarise(mean = mean(displ),
+            sd = sd(displ)) %>% 
+  arrange(desc(mean))
+```
+
+# New summarise features - across
+```{r}
+mpg %>% summarise_if(is.numeric, mean)
+
+
+
+mpg %>% summarise(category = c("low", "high"),
+                  across(is.numeric, range))
+
+mpg %>% summarise(cyl = mean(cyl),
+                  hwy = mean(hwy))
+
+mpg %>% summarise(across(c(cyl, hwy), mean),
+                  across(displ, median))
+
+mpg %>% 
+  group_by(manufacturer) %>% 
+  summarise(n = n(),
+            missing = sum(is.na(displ)))
+
+
+mpg %>% mutate(displ = scale(displ, center = 2, ))
+```
+
