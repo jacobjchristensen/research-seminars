@@ -8,6 +8,16 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 
 ## Documentation
 
+### 2020-05-05
+
+*Topic*: EDA of tidytuesday dataset
+
+
+### 2020-04-27
+
+*Topic*: RStudio cheatsheets: data visualization (`ggplot2`)
+
+
 ### 2020-04-20
 
 *Topic*: RStudio cheatsheets: apply functions (`purrr`)
@@ -17,7 +27,9 @@ Work related to R and RStudio will be central, but other aspects  of research ar
   - `map`/`map2`/`pmap` and `_*` friends
   - `pluck`, `keep`, `discard`
   - `modify`
+  - `set_names`
 
+We also went through a few modeling examples using the *mutate-map* strategy. 
 
 
 ### 2020-04-14

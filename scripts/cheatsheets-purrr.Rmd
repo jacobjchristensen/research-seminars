@@ -1,0 +1,273 @@
+---
+title: "cheatsheets-purrr"
+author: "Jacob J. Christensen"
+date: "21 4 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This is a simple walkthrough of some key functions from [the `purrr` cheatsheet](https://rstudio.com/resources/cheatsheets/). The updated and extended code base can be found at [the tidyverse-purrr website](https://purrr.tidyverse.org/index.html). 
+
+## Load libraries
+
+```{r}
+library(purrr) # all `purrr` functions
+library(ggplot2) # the "mpg" dataset
+library(dplyr) # all `dplyr functions`
+```
+
+## The mpg dataset
+
+From `ggplot2`.
+
+```{r}
+mpg
+```
+
+
+## Apply functions
+
+### map
+
+What column types do we have in mpg?
+
+```{r}
+map(mpg, class)
+mpg %>% map(class) # Same, but with pipe (%>%)
+res <- mpg %>% map(class)
+```
+
+```{r}
+class(res)
+res$manufacturer
+res[["manufacturer"]]
+```
+
+What are the unique values of the character variables/columns/vectors?
+
+```{r}
+res <- mpg %>% 
+  select_if(is.character) %>% 
+  map(unique)
+
+mpg %>% 
+  map_if(is.character, unique)
+
+res$fl
+res %>% pluck("fl")
+```
+
+
+### map_* to simplify
+
+Many variants: map_dbl, map_chr, etc.
+
+```{r}
+# Check dimensions in dataset
+nrow(mpg)
+ncol(mpg)
+dim(mpg)
+
+# Check type of single variable
+typeof(mpg$manufacturer)
+
+# Check type of all of them, and count them up in a table
+mpg %>% 
+  map_chr(typeof) %>% 
+  table()
+```
+
+Use map for summary stats. 
+
+```{r}
+res <- mpg %>% 
+  select_if(is.numeric) %>% 
+  map(mean)
+
+class(res)
+res$displ
+
+res <- mpg %>% 
+  select_if(is.numeric) %>% 
+  map_dbl(mean)
+
+class(res)
+typeof(res)
+```
+
+Use map inside mutate to map over nested data.
+
+```{r}
+library(tidyr)
+
+mpg_nested <- mpg %>% 
+  group_nest(cyl)
+
+mpg_nested$data[[1]]
+mpg_nested %>% 
+  mutate(displ_mean = map_dbl(data, ~mean(.x$displ, na.rm = TRUE)), 
+         displ_sd = map_dbl(data, ~sd(.x$displ, na.rm = TRUE))
+         )
+```
+
+
+### map2
+
+Use map2 to map over two lists (or columns in a dataset). 
+
+```{r}
+mpg_nested
+mpg_nested$data[[1]]
+
+res <- mpg_nested %>% 
+  mutate(res = map2(.x = cyl, .y = data, 
+                    .f = ~paste("Cyl =", .x, .y$manufacturer, .y$model, .y$year)
+                    ))
+
+res$res[[3]]
+```
+
+### pmap
+
+Use pmap to map over three or more list elements. 
+
+```{r}
+res <- mpg %>% 
+  group_nest(cyl, drv) %>% 
+  mutate(res = pmap_chr(.l = list(cyl = cyl, drv = drv, data = data), 
+                    .f = ~paste("Cyl =", ..1, 
+                                "Drv =", ..2, 
+                                ..3$manufacturer[1], ..3$model[1], ..3$year[1])
+                    ))
+
+res
+res$res[[1]]
+```
+
+
+### pluck, keep, discard
+
+These are nice to pluck a single list element, or keep/discard all those that meet some logical statement.
+
+```{r}
+res <- mpg %>% 
+  select_if(is.character) %>% 
+  map(unique)
+
+res$trans
+pluck(res, "trans")
+res %>% pluck("trans")
+
+mpg %>% 
+  keep(is.character)
+
+mpg %>% 
+  discard(is.character)
+
+res %>% keep(~length(.) > 10)
+res %>% keep(function(x) length(x) > 10) # same thing
+```
+
+
+### modify and friends
+
+We didn't go through this, but it's similar to map -- however, it always returns the same type as the input object. 
+
+```{r}
+mpg %>% modify_if(is.character, as.factor)
+
+# In this case that would be similar to this mutate call:
+mpg %>% mutate_if(is.character, as.factor)
+```
+
+
+
+### set_names
+
+Very useful to set names to things. 
+
+```{r}
+res <- list(1, 2, "this is a list object")
+
+# No names, just numbers [[1]], [[2]] and so on
+res
+
+# Set names to it
+res %>% 
+  set_names(nm = c("jacob", "juel", "christensen")) %>% 
+  set_names(toupper)
+```
+
+
+
+## Modeling example
+
+```{r fig.width=4, fig.height=3}
+mpg %>% 
+  ggplot(aes(displ)) + 
+  geom_histogram()
+
+mpg %>% 
+  ggplot(aes(cty, displ)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+
+mpg %>% 
+  ggplot(aes(log(hwy), displ)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+```
+
+Run model. 
+
+```{r}
+fit <- lm(displ ~ cty, data = mpg)
+fit
+
+fit_tidy <- broom::tidy(fit, conf.int = TRUE)
+fit_tidy
+```
+
+Run model for each cylinder. 
+
+```{r}
+res <- mpg %>%
+  group_nest(cyl) %>% 
+  mutate(fit = map(data, ~lm(displ ~ cty + hwy, data = .x)), 
+         fit_tidy = map(fit, ~broom::tidy(.x, conf.int = TRUE) %>% filter(term == "cty")), 
+         estimate = map_dbl(fit_tidy, ~round(.x$estimate, digits = 2)), 
+         conf.low = map_dbl(fit_tidy, ~round(.x$conf.low, digits = 2)), 
+         conf.high = map_dbl(fit_tidy, ~round(.x$conf.high, digits = 2)), 
+         res = paste0("Beta ", estimate, " (95 % CI = ", conf.low, ", ", conf.high, ")")
+         )
+
+res
+res$fit_tidy[[1]]
+res$data[[1]]
+```
+
+We could have used factor variables in the model too. 
+
+```{r}
+mpg %>% 
+  mutate(cyl = factor(cyl)) %>% 
+  lm(displ ~ hwy + cyl, data = .) %>% 
+  broom::tidy() #%>% 
+  # filter(term == "cyl5")
+```
+
+
+
+
+
+
+
+```{r}
+devtools::session_info()
+```
+
+
+---
