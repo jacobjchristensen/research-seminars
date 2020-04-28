@@ -1,3 +1,4 @@
+
 # Research seminars
 
 In this **seminar series**, we will discuss various aspects of research.
@@ -8,14 +9,34 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 
 ## Documentation
 
+### 2020-05-12
+
+*Topic*: EDA of tidytuesday dataset
+
+
 ### 2020-05-05
 
 *Topic*: EDA of tidytuesday dataset
 
 
-### 2020-04-27
+### 2020-04-28
 
 *Topic*: RStudio cheatsheets: data visualization (`ggplot2`)
+
+Created a few plots to showcase the ggplot2 functionality. Then we went over the key topics from the cheatsheet, including: 
+
+- Different types of visualizations (see also [Claus Wilkes great book](https://serialmentor.com/dataviz/))
+- Geoms
+- Scales
+- Coordinate systems
+- Facets
+- Position adjustment
+- Themes
+- Labels
+- Legends
+- Saving
+
+Code in `cheatsheets-ggplot2.rmd`. 
 
 
 ### 2020-04-20
@@ -30,6 +51,8 @@ Work related to R and RStudio will be central, but other aspects  of research ar
   - `set_names`
 
 We also went through a few modeling examples using the *mutate-map* strategy. 
+
+Code in `cheatsheets-purrr.rmd`. 
 
 
 ### 2020-04-14

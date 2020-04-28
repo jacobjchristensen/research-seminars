@@ -1,0 +1,291 @@
+---
+title: "cheatsheets-ggplot2"
+author: "Jacob J. Christensen"
+date: "28 4 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      fig.width = 3.5)
+```
+
+This is a simple walkthrough of some key functions from [the `ggplot2` cheatsheet](https://rstudio.com/resources/cheatsheets/). The updated and extended code base can be found at [the tidyverse-ggplot2 website](https://ggplot2.tidyverse.org/). 
+
+## Load all libraries
+
+```{r}
+library(ggplot2)
+library(tidyverse)
+```
+
+## Dataset
+
+Let's use a dataset from [Raphael Irizzarys `dslabs` package](https://simplystatistics.org/2018/01/22/the-dslabs-package-provides-datasets-for-teaching-data-science/). 
+
+```{r}
+data_olive <- dslabs::olive
+data_olive
+```
+
+## ggplot2 in a nutshell
+
+```{r}
+ggplot(data = data_olive, mapping = aes(x = palmitic, y = palmitoleic)) + geom_point()
+
+# We could move the mapping to the geom object
+ggplot(data = data_olive) + geom_point(mapping = aes(x = palmitic, y = palmitoleic))
+
+# We can also pipe a dataset into the ggplot call
+data_olive %>% # pipe
+  ggplot(aes(palmitic, palmitoleic)) + # + sign
+  geom_point()
+```
+This is the template for any given ggplot. 
+
+```{r}
+knitr::include_graphics(path = "../figures/ggplot2-template.png")
+```
+
+## Geoms
+
+Choose geom based on type of data viz.
+
+```{r}
+# I will use mpg for the rest of the tutorial
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_point()
+
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_jitter(width = 0.5, height = 0.5)
+
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_point(position = position_jitter(width = 0.5, height = 0.5, seed = 1388))
+```
+
+```{r}
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_point() + 
+  geom_rug()
+```
+
+```{r}
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_point() + 
+  geom_rug() + 
+  geom_smooth()
+
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_point() + 
+  geom_rug() + 
+  geom_smooth(method = "lm")
+
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_point() + 
+  geom_rug() + 
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+```{r}
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_text(aes(label = model))
+
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_text(aes(label = model), size = 2.5, check_overlap = TRUE)
+```
+
+```{r}
+mpg_filter <- mpg %>% filter(cyl == 4)
+```
+
+```{r}
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_text(data = mpg_filter, aes(label = model), size = 2.5, check_overlap = TRUE)
+
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_text(data = . %>% filter(cyl == 4), aes(label = model), size = 2.5, check_overlap = TRUE)
+```
+
+```{r}
+mpg %>% 
+  ggplot(aes(x = factor(cyl), y = displ)) + 
+  geom_boxplot()
+
+mpg %>% 
+  ggplot(aes(x = factor(cyl), y = displ)) + 
+  geom_violin()
+
+mpg %>% 
+  ggplot(aes(x = factor(cyl), y = displ)) + 
+  geom_point(position = position_jitter(width = 0.2)) + 
+  geom_boxplot(alpha = 0.4)
+```
+
+```{r}
+mpg %>% 
+  ggplot(aes(manufacturer)) + 
+  geom_bar()
+
+mpg %>% 
+  count(manufacturer) %>% 
+  ggplot(aes(manufacturer, n)) + 
+  geom_col()
+```
+
+
+```{r}
+fit <- lm(displ ~ hwy + year + cyl + drv, data = mpg) %>% broom::tidy(conf.int = TRUE)
+```
+
+
+## Scales
+
+```{r}
+fit %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = term, y = estimate, color = p.value)) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey20") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  scale_color_distiller(palette = "Reds") + 
+  coord_flip()
+```
+
+```{r fig.width=5, fig.height=8}
+RColorBrewer::display.brewer.all()
+```
+
+
+## Coordinate systems
+
+```{r}
+fit %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = term, y = estimate)) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey20") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  coord_flip()
+```
+
+## Facets
+
+```{r fig.width=6, fig.height=4.5}
+mpg %>% 
+  ggplot(aes(hwy, displ)) + 
+  geom_point() + 
+  facet_wrap(~ cyl)
+```
+
+
+## Position adjustments
+
+## Themes
+
+```{r}
+fit %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = term, y = estimate, color = p.value)) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey20") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  scale_color_distiller(palette = "Reds") + 
+  coord_flip() + 
+  theme_minimal() + 
+  theme(axis.line = element_line())
+
+fit %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = term, y = estimate, color = p.value)) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey20") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  scale_color_distiller(palette = "Reds") + 
+  coord_flip() + 
+  ggthemes::theme_fivethirtyeight()
+
+fit %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = term, y = estimate, color = p.value)) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey20") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  scale_color_distiller(palette = "Reds") + 
+  coord_flip() + 
+  ggthemes::theme_excel()
+
+fit %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = term, y = estimate, color = p.value)) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey20") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  scale_color_distiller(palette = "Reds") + 
+  coord_flip() + 
+  ggthemes::theme_stata()
+```
+
+## Labels
+
+```{r}
+fit %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = term, y = estimate, color = p.value)) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey20") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  scale_color_distiller(palette = "Reds") + 
+  coord_flip() + 
+  theme_classic() + 
+  labs(y = "Estimate (95 % CI)", x = NULL, color = "P value")
+```
+
+
+## Legends
+
+```{r fig.width=3, fig.height=2.5}
+fit %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = term, y = estimate, color = p.value)) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey20") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  scale_color_distiller(palette = "Reds") + 
+  coord_flip() + 
+  theme_classic() + 
+  labs(y = "Estimate (95 % CI)", x = NULL, color = "P value") + 
+  theme(legend.position = "bottom")
+```
+
+
+## Saving
+
+```{r fig.width=3, fig.height=2.5}
+fit %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = term, y = estimate, color = p.value)) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey20") + 
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high)) + 
+  scale_color_distiller(palette = "Reds") + 
+  coord_flip() + 
+  theme_classic() + 
+  labs(y = "Estimate (95 % CI)", x = NULL, color = "P value") + 
+  theme(legend.position = "bottom")
+
+ggsave(filename = "../figures/fancy-plot.png", width = 3, height = 2.5, dpi = 500)
+ggsave(filename = "../figures/fancy-plot.pdf", width = 3, height = 2.5)
+```
+
+
+
+
+
+
+
+
+
+
+---
