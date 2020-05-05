@@ -1,6 +1,6 @@
 ---
-title: "Broadway musicals"
-subtitle: "#tidytuesday week 18"
+title: "Food consumption & CO2 emmission"
+subtitle: "#tidytuesday week 8"
 author: "Jacob J. Christensen"
 date: "5 5 2020"
 output: html_document
