@@ -1,0 +1,161 @@
+---
+title: "200505 Tidy Tuesday"
+author: "Vegard Lysne"
+date: "5 5 2020"
+output: html_document
+---
+
+# Packages
+```{r setup, include=FALSE}
+library(tidytuesdayR)
+library(tidyverse)
+library(skimr)
+library(ggrepel)
+```
+
+# Check out the Tidy tuesday package 
+```{r}
+# List functions of tidy tuesday packages
+ls("package:tidytuesdayR")
+
+# List all available data sets
+tt_available()
+
+# load a data set using year/week or date
+tt <- tt_load(2020, week = 8)
+
+# Look at data
+tt
+
+# Load specific data
+d <- tt$food_consumption
+```
+
+# Explore data set
+## Show and summarise data
+```{r}
+d
+str(d)
+glimpse(d)
+summary(d)
+skim(d)
+names(d)
+```
+
+## visualize variables
+```{r fig.height=15}
+d %>% 
+  ggplot(aes(log(consumption))) +
+  geom_density() + 
+  facet_wrap(~food_category, scales = "free")
+
+d %>% 
+  ggplot(aes(co2_emmission)) +
+  geom_density() + 
+  facet_wrap(~food_category, scales = "free_y")
+
+d %>% 
+  ggplot(aes(log(consumption), co2_emmission)) +
+  geom_point() + 
+  facet_wrap(~food_category, scales = "free_x")
+
+d %>% 
+  group_by(country) %>%
+  summarise(CO2 = mean(co2_emmission)) %>% 
+  arrange(desc(CO2)) %>% 
+  ggplot(aes(x = fct_inorder(country), y = CO2)) + 
+  geom_col() + 
+  geom_col(data = . %>% filter(country == "Norway"), fill = "red") +
+  geom_col(data = . %>% filter(country == "Sweden"), fill = "blue") + 
+  coord_flip()
+```
+
+```{r fig.height = 15, fig.width = 6}
+d %>% 
+  filter(country %in% c("Norway", "Sweden", "Denmark", "Finland", "Iceland")) %>% 
+  group_by(country, food_category) %>%
+  summarise(CO2 = mean(co2_emmission)) %>% 
+  ungroup(country, food_category) %>% 
+  arrange(desc(CO2)) %>%
+  ggplot(aes(y = fct_inorder(food_category), x = CO2)) + 
+  geom_col() + 
+  facet_grid(rows = vars(country))
+```
+
+# Answer some cool questions
+## 1. Which country have the highest food-related CO2 emissions per person?
+```{r}
+d %>% 
+  group_by(country) %>% 
+  summarise(CO2 = mean(co2_emmission)) %>% 
+  arrange(desc(CO2)) %>% 
+  slice(1)
+```
+
+## 2. Heatmap of top 50 countries and food groups (+ excluding beef)
+```{r fig.width = 10, fig.height = 5}
+top50 <- d %>% 
+  group_by(country) %>% 
+  summarise(CO2 = mean(co2_emmission)) %>% 
+  arrange(desc(CO2)) %>% 
+  slice(1:50) %>% 
+  pull(country)
+
+d %>% 
+  filter(country %in% top50 & food_category != "Beef") %>% 
+  ggplot(aes(y = food_category, x = country, fill = co2_emmission)) + 
+  geom_tile() + 
+  scale_fill_viridis_c() + 
+  labs(y = NULL, x = NULL) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom")
+```
+
+## 3. Comparison of CO2-emmission from animal food vs non-animal food
+```{r}
+d %>% 
+#  filter(country %in% top50) %>% 
+  mutate(catnew = case_when(food_category %in% c("Beef", "Eggs", "Lamb & Goat", 
+                                                 "Milk - inc. cheese", "Pork", 
+                                                 "Poultry", "Fish")  ~ "Animal", 
+                                                 TRUE ~ "Non-animal")) %>% 
+  group_by(country, catnew) %>% 
+  summarise(CO2 = mean(co2_emmission)) %>% 
+#  arrange(desc(CO2)) %>% #(dette rangerte landene etter max CO2 utslipp fra enten animal eller non-animal, ikke totalen)
+  mutate(sum = sum(CO2)) %>% arrange(desc(sum)) %>%  # denne linjen ville beregnet summen i hvert land og rangert på totalen
+  ggplot(aes(y = fct_inorder(country), x = CO2, fill = catnew)) + 
+  geom_col(alpha = 0.4) +
+  facet_grid(cols = vars(catnew))
+```
+
+## 4. Which countries have higher CO2 from non-animal sources
+```{r}
+(d %>% 
+  mutate(catnew = case_when(food_category %in% c("Beef", "Eggs", "Lamb & Goat", 
+                                                 "Milk - inc. cheese", "Pork", 
+                                                 "Poultry", "Fish")  ~ "Animal", 
+                                                 TRUE ~ "Non-animal")) %>% 
+  group_by(country, catnew) %>% 
+  summarise(CO2 = mean(co2_emmission)) %>% 
+  pivot_wider(names_from = catnew,
+              values_from = CO2) %>% 
+  filter(`Non-animal` > Animal)) %>% 
+  pull(country) -> vegetablecountries
+```
+
+# 5. Use the gapminder dataset to plot gdp vs lifeExp for the most current year (2007). Highlight countries with higher CO2 emmission from non-animal foods, and label those with life expectancy > 70 years
+```{r}
+library(gapminder)
+
+# Siste år kunne vi heller funnet med max(gapminder$year)
+
+gapminder %>% 
+  filter(year == 2007) %>% 
+  ggplot(aes(gdpPercap, lifeExp)) + 
+  geom_point(data = . %>% filter(country %in% vegetablecountries),
+             size = 3, color = "red") + 
+  geom_point() +
+  geom_label_repel(data = . %>% filter(country %in% vegetablecountries & lifeExp > 70), 
+                           aes(label = country))
+```
+

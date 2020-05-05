@@ -7,16 +7,32 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 
 ![](figures/premise.png)
 
+
 ## Documentation
+
+
+### 2020-05-19
+
+*Topic*: EDA of tidytuesday dataset
+
 
 ### 2020-05-12
 
 *Topic*: EDA of tidytuesday dataset
 
+Amanda will code us through some data. 
+
 
 ### 2020-05-05
 
-*Topic*: EDA of tidytuesday dataset
+*Topic*: This week, we will use tidytuesday data from week 8, about food consumption and CO2 emissions. These data are taken from [nu3 - Food carbon footprint index 2018](https://www.nu3.de/blogs/nutrition/food-carbon-footprint-index-2018). 
+
+*Log*: 
+
+We went through a few aspects related to tidytuesday in general, including use of the `tidytuesdayR` package. Spent some time getting to know the variables included. Then we discussed potential research questions, and started analysis. 
+
+
+Code in `tt-week18.rmd` (Jacobs code) and `XXX.rmd` (Vegards code). 
 
 
 ### 2020-04-28

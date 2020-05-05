@@ -1,0 +1,310 @@
+---
+title: "Broadway musicals"
+subtitle: "#tidytuesday week 18"
+author: "Jacob J. Christensen"
+date: "5 5 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Info
+
+This week we start looking at tidytuesday datasets. What is *tidytuesday*, you ask?
+
+> A weekly social data project in R
+> 
+> A weekly data project aimed at the R ecosystem. As this project was borne out of the R4DS Online Learning Community and the R for Data Science textbook, an emphasis was placed on understanding how to summarize and arrange data to make meaningful charts with ggplot2, tidyr, dplyr, and other tools in the tidyverse ecosystem. However, any code-based methodology is welcome - just please remember to share the code used to generate the results.
+> 
+> - [tidytuesday website](https://github.com/rfordatascience/tidytuesday)
+
+
+## Load packages
+
+```{r}
+library(tidyverse)
+library(tidytuesdayR) # not really necessary since I specify the package and function explicitly below
+```
+
+
+## Data
+
+This week, we will use tidytuesday data from week 8, about food consumption and CO2 emissions. These data are taken from [nu3 - Food carbon footprint index 2018](https://www.nu3.de/blogs/nutrition/food-carbon-footprint-index-2018). 
+
+We can get the data one of two ways: 
+
+- with the `tidytuesdayR` package (available from GitHub)
+- Or by downloading the available datafiles in .csv format with the `readr` package
+
+### `readr::read_csv`
+
+```{r}
+d <- readr::read_csv(
+  'https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-02-18/food_consumption.csv'
+  )
+```
+
+Let's do it with the package as well. 
+
+### `tidytuesdayR::tt_load`
+
+```{r}
+tt <- tidytuesdayR::tt_load(2020, week = 8)
+```
+
+Look at the data object. 
+
+```{r}
+class(tt)
+```
+
+This is an object of type `tt_data`. If we simply `print` it, we get to the html site for this week's tidytuesday. 
+
+```{r}
+tt # same as print(tt)
+```
+
+What does it contain?
+
+```{r}
+names(tt)
+```
+
+Only one object. Look at the `food_consumption` object. 
+
+```{r}
+d <- tt$food_consumption
+```
+
+## Quick view of data
+
+```{r}
+dim(d) # same as nrow(d) and ncol(d)
+names(d)
+glimpse(d) # same as `str(d)` (only better)
+```
+
+We have four variables, two character and two numeric. From the documentation: 
+
+- *country*: character,	Country Name
+- *food_category*: character, Food Category
+- *consumption*: double, Consumption (kg/person/year)
+- *co2_emmission*: double, Co2 Emission (Kg CO2/person/year)
+
+How many countries do we have?
+
+```{r}
+d %>% distinct(country)
+```
+
+130 countries. 
+
+How many food groups do we have?
+
+```{r}
+d %>% distinct(food_category)
+```
+
+Eleven food groups. 
+
+
+## Research questions
+
+We could ask a lot of RQs, but here are some of them:
+
+- Which food categories are quantitatively most important for the Nordic countries?
+- Does food consumption differ between countries?
+- Is food consumption related to CO2 emission?
+- Which countries have a pattern of food consumption that emits most CO2?
+
+
+Also, we have more general data analysis questions, such as: 
+
+- Are the data complete? Any data missing, for example for certain countries or food groups?
+- What are the distributions of consumption and emission?
+- Is the data source trustworthy?
+
+...and the like. 
+
+
+## EDA
+
+### food vs. CO2 across countries
+
+What is the association between food consumption and CO2 emmissions?
+
+```{r fig.width=9, fig.height=5}
+d %>% 
+  ggplot(aes(consumption, co2_emmission)) + 
+  geom_point(aes(color = food_category)) + 
+  facet_wrap(~ food_category, scales = "free_x")
+```
+
+Clearly beef, lamb & goat and dairy are the most important ones. 
+
+Note also that these figures suggest that the CO2 emmission data are created from models. There is no variation in the measurement across a particular consumption level. 
+
+
+### Bars
+
+Calculate sum of CO2 emissions per country.
+
+```{r}
+d_mod <- d %>% 
+  group_by(country) %>% 
+  mutate(co2_sum = sum(co2_emmission)) %>% 
+  arrange(desc(co2_sum))
+
+d_mod
+```
+
+Now plot the figure. 
+
+```{r fig.width=7, fig.height=15}
+d_mod %>% 
+  ggplot(aes(co2_emmission, fct_reorder(country, co2_sum), 
+             fill = food_category)) + 
+  geom_col()
+```
+
+Use position fill instead, and change x axis to percent format. 
+
+```{r fig.width=7, fig.height=15}
+d_mod %>% 
+  ggplot(aes(co2_emmission, fct_reorder(country, co2_sum), 
+             fill = food_category)) + 
+  geom_col(position = position_fill()) + 
+  scale_x_continuous(labels = scales::percent_format())
+```
+
+### Circular
+
+Circularize the first version and clean up a bit. 
+
+```{r fig.width=5, fig.height=5}
+d_mod %>% 
+  ggplot(aes(fct_reorder(country, co2_sum), co2_emmission, 
+             fill = food_category)) + 
+  geom_col(show.legend = FALSE, position = position_stack()) + 
+  coord_polar() + 
+  theme_minimal() + 
+  labs(x = NULL, y = NULL)
+```
+
+And then we could have worked the angles a bit, and improved the overall theme. However, we will proceed to the next visualization. 
+
+
+### spaghetti plot
+
+Let's plot the per country CO2 emissions as a spaghetti plot. 
+
+```{r}
+d %>% 
+  ggplot(aes(fct_reorder(food_category, co2_emmission, .fun = mean), 
+             co2_emmission)) + 
+  geom_line(aes(group = country), color = "grey80") + 
+  geom_point(aes(group = country), shape = 21, fill = "grey80", color = "white") + 
+  
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  labs(x = NULL, y = NULL)
+```
+
+Let's log the y axis. 
+
+```{r}
+d %>% 
+  ggplot(aes(fct_reorder(food_category, co2_emmission, .fun = mean), 
+             co2_emmission)) + 
+  geom_line(aes(group = country), color = "grey80") + 
+  geom_point(aes(group = country), shape = 21, fill = "grey80", color = "white") + 
+  
+  theme_minimal() + 
+  coord_trans(y = "pseudo_log") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  labs(x = NULL, y = NULL)
+```
+
+Add a summary stat. 
+
+```{r}
+d %>% 
+  ggplot(aes(fct_reorder(food_category, co2_emmission, .fun = mean), 
+             co2_emmission)) + 
+  geom_line(aes(group = country), color = "grey80") + 
+  geom_point(aes(group = country), shape = 21, fill = "grey80", color = "white") + 
+  
+  stat_summary(fun.data = "mean_cl_boot") + 
+  
+  theme_minimal() + 
+  coord_trans(y = "pseudo_log") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  labs(x = NULL, y = NULL)
+```
+
+Highlight the Nordic countries. 
+
+```{r}
+nordic_countries <- c("Norway", "Sweden", "Denmark", "Finland", "Iceland")
+
+d %>% 
+  ggplot(aes(fct_reorder(food_category, co2_emmission, .fun = mean), 
+             co2_emmission)) + 
+  geom_line(aes(group = country), color = "grey80") + 
+  geom_point(aes(group = country), shape = 21, fill = "grey80", color = "white") + 
+  
+  geom_line(data = . %>% filter(country %in% nordic_countries), 
+            aes(group = country), color = "red") + 
+  geom_point(data = . %>% filter(country %in% nordic_countries), 
+             aes(group = country), shape = 21, fill = "red", color = "white") + 
+  
+  stat_summary(fun.data = "mean_cl_boot") + 
+  
+  theme_minimal() + 
+  coord_trans(y = "pseudo_log") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  labs(x = NULL, y = NULL)
+```
+
+Add country names. 
+
+```{r}
+d %>% 
+  ggplot(aes(fct_reorder(food_category, co2_emmission, .fun = mean), 
+             co2_emmission)) + 
+  geom_line(aes(group = country), color = "grey80") + 
+  geom_point(aes(group = country), shape = 21, fill = "grey80", color = "white") + 
+  
+  geom_line(data = . %>% filter(country %in% nordic_countries), 
+            aes(group = country, color = country), size = 1) + 
+  geom_point(data = . %>% filter(country %in% nordic_countries), 
+             aes(fill = country), size = 2, shape = 21, color = "white") + 
+  
+  stat_summary(fun.data = "mean_cl_boot") + 
+  
+  scale_fill_brewer(name = NULL, palette = "Dark2") + 
+  scale_color_brewer(name = NULL, palette = "Dark2") + 
+  
+  theme_minimal() + 
+  coord_trans(y = "pseudo_log") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        legend.position = c(0.25, 0.8), 
+        legend.background = element_rect(color = "grey50")) + 
+  guides(fill = guide_legend(nrow = 2), 
+         color = guide_legend(nrow = 2)) + 
+  labs(x = NULL, y = NULL, 
+       title = "CO2 emmissions per country and food category", 
+       subtitle = "Nordic countries are highlighted")
+```
+
+
+## Session info
+
+```{r}
+devtools::session_info()
+```
+
+
+---
