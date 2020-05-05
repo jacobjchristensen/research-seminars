@@ -31,8 +31,7 @@ Amanda will code us through some data.
 
 We went through a few aspects related to tidytuesday in general, including use of the `tidytuesdayR` package. Spent some time getting to know the variables included. Then we discussed potential research questions, and started analysis. 
 
-
-Code in `tt-week18.rmd` (Jacobs code) and `XXX.rmd` (Vegards code). 
+Code in `tt-week18.rmd` (Jacobs code) and `200505-TT.rmd` (Vegards code). It should be possible to download and run these scripts without problems. 
 
 
 ### 2020-04-28
