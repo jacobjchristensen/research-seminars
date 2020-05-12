@@ -1,0 +1,56 @@
+---
+title: "tt-week20: volcanos"
+author: "Jacob J. Christensen"
+date: "12 5 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(tidytuesdayR)
+library(leaflet)
+library(htmlwidgets)
+```
+
+```{r}
+tuesdata <- tidytuesdayR::tt_load(2020, week = 20)
+volcano <- tuesdata$volcano
+volcano
+```
+
+This is a simple example taken from [the RStudio leaflet for R website](https://rstudio.github.io/leaflet/): 
+
+```{r}
+m <- leaflet() %>%
+  addTiles() %>%  # Add default OpenStreetMap map tiles
+  addMarkers(lng=174.768, lat=-36.852, popup="The birthplace of R")
+m  # Print the map
+```
+
+Let's try this with the Volcano dataset. Change the tiles tot Stamen (toner). 
+
+```{r}
+volcano_map <- volcano %>% 
+  leaflet() %>%
+  addProviderTiles(providers$Stamen.Toner) %>%  # Add default OpenStreetMap map tiles
+  addMarkers(~longitude, ~latitude, popup = ~as.character(volcano_name), label = ~as.character(volcano_name))
+volcano_map
+```
+
+Save to an interactive html file. 
+
+```{r}
+library(htmlwidgets)
+saveWidget(volcano_map, file = "volcano_map.html")
+```
+
+
+
+
+
+
+---

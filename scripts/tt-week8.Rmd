@@ -84,6 +84,7 @@ d <- tt$food_consumption
 dim(d) # same as nrow(d) and ncol(d)
 names(d)
 glimpse(d) # same as `str(d)` (only better)
+skimr::skim(d)
 ```
 
 We have four variables, two character and two numeric. From the documentation: 

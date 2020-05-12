@@ -10,17 +10,32 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 
 ## Documentation
 
+### 2020-05-26
+
+*Topic*: TBA
+
 
 ### 2020-05-19
 
-*Topic*: EDA of tidytuesday dataset
+*Topic*: How to do peer review
+
+This will be more of a discussion about how to do peer review. We don't want to end up as [reviewer #2](http://dailynous.com/2017/02/07/bad-reviewer-2-actually-data-philosophy-journal/). 
+
 
 
 ### 2020-05-12
 
 *Topic*: EDA of tidytuesday dataset
 
-Amanda will code us through some data. 
+Amanda went through the TT dataset for week 20 about Volcanos. Made the following figures: 
+
+- Number of volcanos per country (top 15 countries with most volcanos)
+- Number of volcanos per country (top 15 countries with most volcanos), colored by volcano type
+- Elevation of volcanos (top 15 countries with most volcanos) with density plots
+- We also made a `leaflet` map of all volcanos. Just 'cause. 
+- And some other stuff. 
+
+Code in `tidytuesday_w20.Rmd` and `tt-week20-volcanos.Rmd`. 
 
 
 ### 2020-05-05

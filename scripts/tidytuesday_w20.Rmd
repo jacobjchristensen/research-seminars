@@ -1,0 +1,120 @@
+---
+title: Volcano eruptions
+subtitle: "Tidy tuesday week 20"
+author: "Amanda"
+date: "11 5 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages and data
+
+```{r}
+
+library(tidyverse)
+library(tidytuesdayR)
+library(ggrepel)
+
+tuesdata <- tidytuesdayR::tt_load(2020, week = 20)
+volcano <- tuesdata$volcano
+eruptions <- tuesdata$eruptions
+events <- tuesdata$events
+```
+
+# Which country has the highest number of volcanos?
+```{r}
+volcano %>% 
+  group_by(country) %>%
+  summarise(antall = n_distinct(volcano_number)) %>% 
+  arrange(desc(antall)) %>%
+  slice(1:15) %>% 
+  mutate(country = fct_inorder(country) %>% fct_rev()) %>%
+  ggplot(aes(country, antall)) +
+  geom_col(aes(fill = antall)) +
+  scale_fill_viridis_b(option = "inferno") +
+  coord_flip() +
+  theme_classic()
+
+# color by volcano type
+top_15 <- volcano %>% 
+  group_by(country) %>%
+  summarise(antall = n_distinct(volcano_number)) %>% 
+  arrange(desc(antall)) %>%
+  slice(1:15) %>% 
+  pull(country)
+  
+volcano %>% 
+  filter(country %in% top_15) %>%
+  mutate(primary_volcano_type = str_remove(primary_volcano_type, pattern = "\\(.*\\)|\\?")) %>% 
+  mutate(country = factor(country, levels = top_15) %>% fct_rev()) %>%
+  ggplot(aes(country, fill = primary_volcano_type)) +
+  geom_bar() +
+  scale_fill_viridis_d(option = "inferno") +
+  coord_flip() +
+  theme_classic() +
+  labs(x = NULL, title = "Number of volcanos", y = NULL, fill = NULL)
+```
+
+# Countries with most volcanos that has been active past 50 years
+```{r}
+volcano %>% 
+  left_join(select(eruptions, volcano_number, start_year), by = "volcano_number") %>% 
+  filter(start_year > 1970) %>% 
+  group_by(country) %>% 
+  summarise(antall = n_distinct(volcano_number)) %>% 
+  arrange(desc(antall)) %>%
+  slice(1:15) %>% 
+  mutate(country = fct_inorder(country) %>% fct_rev()) %>%
+  ggplot(aes(country, antall)) +
+  geom_col(aes(fill = antall)) +
+  scale_fill_viridis_b(option = "inferno") +
+  coord_flip() +
+  theme_classic()
+```
+
+# What's the distribution of volcano height within each country?
+```{r}
+volcano %>% 
+  filter(country %in% top_15) %>% 
+  ggplot(aes(elevation)) +
+  geom_density(aes(y = after_stat(count))) +
+  facet_wrap(~country) 
+```
+
+# Which countries have volcanos with the most eruptions?
+```{r}
+
+```
+
+# What volcano is on average the most explosive? (since year 0)
+```{r}
+
+```
+
+# How many different event types are there? What are the most common types of events?
+```{r}
+
+```
+
+# Do different event types have different Volcano Explosivity Index?
+```{r}
+interesting_events <- c("Bombs", "Explosion", "Lava fountains", "Tsunami")
+
+eruptions %>%
+  drop_na(vei) %>% 
+  left_join(events, by = c("eruption_number", "volcano_number", "volcano_name")) %>% 
+  filter(event_type %in% interesting_events) %>% 
+  ggplot(aes(x = vei, fill = event_type)) +
+  geom_density(alpha = 0.5) +
+  theme_classic() +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(x = "Volcano Explosivity Index (VEI)", fill = NULL)
+```
+
+## Session info
+```{r}
+devtools::session_info()
+```
