@@ -10,9 +10,18 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 
 ## Documentation
 
-### 2020-05-26
+
+### 2020-06-02
 
 *Topic*: TBA
+
+
+### 2020-05-26
+
+*Topic*: Power calculations in R
+
+We will go over some simple power calculations in R using the `pwr` package, and discuss the usefulness of *post hoc* power calculations in particular. 
+
 
 
 ### 2020-05-19
@@ -20,6 +29,16 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 *Topic*: How to do peer review
 
 This will be more of a discussion about how to do peer review. We don't want to end up as [reviewer #2](http://dailynous.com/2017/02/07/bad-reviewer-2-actually-data-philosophy-journal/). 
+
+Short summary: 
+
+- Give a brief overview and general recommendation. 
+  -	Succinctly describe knowledge gap, importance and relevance to the readers of the journal.
+  -	Briefly outline key methods and findings. 
+  -	Explain reasoning behind recommendation. 
+- Prioritize your feedback by importance: most important major comments first; minor comments last. 
+- Use checklists: STROBE, CONSORT, etc. or specific checklists provided by the journal. 
+- The distinction between *minor* and *major* revision is not entirely clear; however, a rule of thumb can be whether reviewer comments would lead to another round of review or not. 
 
 
 
