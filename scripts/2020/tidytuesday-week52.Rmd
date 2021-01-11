@@ -1,0 +1,579 @@
+---
+title: "Tidytuesday week 52"
+subtitle: "Research seminars"
+author: "Jacob J. Christensen"
+date: "`r format(Sys.time(), '%Y-%b-%d')`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+    toc_float: yes
+    code_folding: show
+    theme: lumen
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	eval = TRUE, 
+  echo = TRUE, 
+  message = TRUE, 
+  warning = FALSE, 
+	fig.align = "center",
+	fig.width = 2.4,
+	fig.height = 2
+)
+
+# To keep figure, in the specific chunk: 
+# 1. Give it a name, 
+# 2. Adjust width and height, and 
+# 3. And add this to the chunk: opts.label="keep_fig"
+knitr::opts_template$set(
+  keep_fig = list(
+    fig.path = "../results/figures/", 
+    fig.keep = "all", 
+    dpi = 400))
+```
+
+## Pre-work
+
+The knitr setup is done. Do a bit of pre-work: 
+
+- Load necessary *libraries*, 
+- Set the ggplot2 *theme* to a type that is a bit more publication-ready. 
+
+```{r message=FALSE}
+# Attach libraries and functions
+library(tidytuesdayR)
+library(tidyverse)
+library(patchwork)
+library(ggforce)
+
+# Set project theme
+theme_set(theme_minimal() + theme(axis.line = element_line()))
+```
+
+## Info
+
+**The Big Mac Index**
+
+This weeks topic is about [the Big Mac Index](https://github.com/rfordatascience/tidytuesday/tree/master/data/2020/2020-12-22). 
+
+> *How it works*
+> 
+> Purchasing-power parity implies that exchange rates are determined by the value of goods that currencies can buy. 
+> 
+> Differences in local prices - in our case, for Big Macs - can suggest what the exchange rate should be. 
+> 
+> Using *burgernomics*, we can estimate how much one currency is under- or over-valued relative to another. 
+
+
+## Get the data
+
+```{r message=FALSE}
+tuesdata <- tt_load(2020, week = 52)
+data_tt <- tuesdata$`big-mac`
+```
+
+Take a look at the data structure. 
+
+```{r}
+skimr::skim(data_tt)
+```
+
+There are *1386 rows/observations* and *19 columns/variables*. The "adjusted" variables have a lot of missing entries. 
+
+## Exploratory data analysis
+
+For EDA, focus on *Norway* only (29 data points). 
+
+```{r}
+data_tt_norway <- data_tt %>% filter(name == "Norway")
+
+# Number of data points for Norway
+nrow(data_tt_norway)
+```
+
+### Distributions
+
+We will now plot a few of the variables to see their distribution. 
+
+Two variables are not related to Big Mac prices: `dollar_ex` (Local currency units per dollar, source: Thomson Reuters) and `GDP_dollar` (gross domestic product per person, in dollars, source: IMF World Economic Outlook reports). Let's have a look at those first. 
+
+```{r fig.width=4, fig.height=2}
+data_tt_norway %>% 
+  select(date, dollar_ex, gdp_dollar) %>% 
+  pivot_longer(-date) %>% 
+  ggplot(aes(date, value)) + 
+  facet_wrap(~ name, scales = "free_y") + 
+  geom_line()
+```
+
+The data collection is more complete for `dollar_ex`. `GDP_dollar` starts at: 
+
+```{r}
+data_tt_norway %>% 
+  arrange(date) %>% 
+  filter(!is.na(gdp_dollar)) %>% 
+  slice(1) %>% 
+  pull("date")
+```
+
+...July 2011. 
+
+Let's plot Norway over time. First look at `local_price`, `dollar_price` and `adj_price`. 
+
+```{r fig.width=5.5, fig.height=2}
+data_tt_norway %>% 
+  select(date, ends_with("_price")) %>% 
+  pivot_longer(-date) %>% 
+  ggplot(aes(date, value)) + 
+  facet_wrap(~ fct_inorder(name), scales = "free_y") + 
+  geom_line()
+```
+
+Then what about all the `_raw` variables? These variables are indices of under- or over-value of local currencies, compared to other currencies. These 
+
+```{r fig.width=9, fig.height=2}
+data_tt_norway %>% 
+  select(date, ends_with("_raw")) %>% 
+  pivot_longer(-date) %>% 
+  ggplot(aes(date, value)) + 
+  facet_wrap(~ fct_inorder(name), scales = "free_y", nrow = 1) + 
+  geom_line()
+```
+
+It appears the Norwegian krone has been over-valued for many decades compared to USD, EURO, BGP, JPY and CNY, but in recent years it has normalized somewhat. Let's look at the same values, but adjusted for GDP. 
+
+```{r fig.width=9, fig.height=2}
+data_tt_norway %>% 
+  select(date, ends_with("_adjusted")) %>% 
+  pivot_longer(-date) %>% 
+  ggplot(aes(date, value)) + 
+  facet_wrap(~ fct_inorder(name), scales = "free_y", nrow = 1) + 
+  geom_line()
+```
+
+Same as above, except the time series is a bit shorter due to limits in GDP (available only from July 2011). 
+
+
+### Highlight min and max values
+
+If I want to highlight minimum and maximum values for a time series plot, I can just use filter directly. In the plot it will look like this: 
+
+```{r}
+data_tt_norway %>% 
+  ggplot(aes(date, local_price)) + 
+  geom_line() + 
+  geom_point(data = . %>% filter(local_price == max(local_price)), color = "blue") + 
+  geom_point(data = . %>% filter(local_price == min(local_price)), color = "red")
+```
+
+### Trend line
+
+We can also add a smoothened line to highlight the trend (instead of the variation) over time. 
+
+```{r message=FALSE}
+data_tt_norway %>% 
+  ggplot(aes(date, local_price)) + 
+  geom_line(color = "grey60") + 
+  geom_smooth(method = "lm", se = FALSE, color = "black", size = 0.5) + 
+  geom_point(data = . %>% filter(local_price == max(local_price)), color = "blue") + 
+  geom_point(data = . %>% filter(local_price == min(local_price)), color = "red")
+```
+
+While the `geom_line` makes for nice-looking Tufte sparklines, the regression line can say something about trends. This could also have been shown as a smoothened line. 
+
+
+## Burgernomics
+
+Let's move to burgernomics. We will now recreate a few of the figures from [the Economics web tool](https://www.economist.com/news/2020/07/15/the-big-mac-index). 
+
+### All countries
+
+#### Time series
+
+Prep a few colors and start and end points in the time series. 
+
+```{r}
+col_values <- RColorBrewer::brewer.pal(n = 4, name = "Set1")[c(2, 1)]
+date_start_end <- data_tt$date %>% unique() %>% magrittr::extract(c(1, 33))
+```
+
+Plot figure with points. 
+
+```{r fig.width=6, fig.height=3}
+data_tt %>% 
+  mutate(value = if_else(usd_raw < 0, true = "under-valued", false = "over-valued")) %>% 
+  
+  ggplot(aes(date, usd_raw, color = value)) + 
+  
+  geom_hline(yintercept = 0, color = "grey80") + 
+  geom_line(data = . %>% filter(name == "Norway"), color = "grey60") + 
+  ggrepel::geom_text_repel(data = . %>% filter(name == "Norway" & date == "2011-07-01"), 
+                           aes(label = name), color = "grey60", size = 2.5) + 
+  geom_point(alpha = 0.2) + 
+  
+  scale_color_manual(values = col_values) + 
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y", limits = date_start_end) +
+  scale_y_continuous(labels = scales::percent_format()) + 
+  
+  theme_classic() + 
+  theme(legend.position = "none", 
+        axis.line = element_blank()) + 
+  
+  labs(x = NULL, y = NULL)
+```
+
+We see a general trend where the currencies tend to be more normalized or under-valued compared to USD over time. 
+
+Switch to another geom to emphasize the trend for each country. Include trends for both raw and GDP-adjusted values for all currencies. 
+
+```{r message=FALSE, fig.width=8, fig.height=3.5}
+data_tt %>% 
+  pivot_longer(c(ends_with("_raw"), ends_with("_adjusted")), names_to = "raw_adjusted") %>% 
+  
+  ggplot(aes(date, value)) + 
+  
+  geom_hline(yintercept = 0, color = "grey80") + 
+  geom_line(aes(group = name), alpha = 0.1) + 
+  geom_smooth(size = 0.5) + 
+  
+  scale_color_manual(values = col_values) + 
+  scale_x_date(date_breaks = "6 years", date_labels = "%Y") +
+  scale_y_continuous(labels = scales::percent_format()) + 
+  
+  facet_wrap(~ fct_inorder(raw_adjusted), nrow = 2) + 
+  theme_classic() + 
+  theme(legend.position = "none", 
+        axis.line = element_blank(), 
+        strip.background = element_blank()) + 
+  
+  labs(x = NULL, y = NULL)
+```
+
+Here, a more interesting trend emerges where we see large differences between currencies. Most other currencies are over-valued compared to CNY, but similar to the other currencies they all tend to normalize in later years. 
+
+
+#### Lollipop chart
+
+Now create the lollipop chart for July 2020 for all countries. 
+
+```{r fig.width=6, fig.height=3}
+data_tt %>% 
+  filter(date == "2020-07-01") %>% 
+  mutate(value = if_else(usd_raw < 0, true = "under-valued", false = "over-valued")) %>% 
+  
+  ggplot(aes(fct_reorder(name, usd_raw), usd_raw, color = value)) + 
+  
+  geom_hline(yintercept = 0, color = "grey80") + 
+  geom_segment(aes(xend = name, yend = 0), color = "grey80") + 
+  geom_point() + 
+  geom_text(data = . %>% filter(name != "United States"), 
+            aes(y = usd_raw + 0.06 * sign(usd_raw), label = iso_a3), 
+            color = "grey40", size = 2.2, angle = 90) + 
+  
+  scale_color_manual(values = col_values) + 
+  scale_y_continuous(labels = scales::percent_format()) + 
+  
+  theme_classic() + 
+  theme(legend.position = "none", 
+        axis.line = element_blank(), 
+        axis.text.x = element_blank(), 
+        axis.ticks.x = element_blank()) + 
+  
+  labs(x = NULL, y = NULL)
+```
+
+This plot could be extended to 1) other data points (2007, 2011, etc), 2) other base currencies (Euro, British pounds, etc), or 3) GDP-adjusted values (for a limited range). The Economist application let's the user switch between these parts of the data easily. 
+
+
+#### Sina plot
+
+Let's instead create that as a sina plot with [`ggforce::geom_sina`](https://ggforce.data-imaginist.com/reference/geom_sina.html). 
+
+```{r fig.width=4, fig.height=5}
+data_tt %>% 
+  filter(date == "2020-07-01") %>% 
+  pivot_longer(c(ends_with("_raw"), ends_with("_adjusted")), names_to = "raw_adjusted", values_to = "index") %>% 
+  mutate(value = if_else(index < 0, true = "under-valued", false = "over-valued")) %>% 
+  separate(raw_adjusted, into = c("comparison", "raw_adjusted"), sep = "_") %>% 
+  mutate(comparison = str_to_upper(comparison), 
+         raw_adjusted = str_to_title(raw_adjusted)) %>% 
+  
+  ggplot(aes(fct_rev(fct_inorder(comparison)), index)) + 
+  
+  geom_hline(yintercept = 0, color = "grey80") + 
+  geom_violin(color = "grey60", linetype = "dashed") + 
+  ggforce::geom_sina(aes(fill = raw_adjusted), 
+                     shape = 21, 
+                     color = "white", 
+                     # fill = "grey80", 
+                     size = 3) + 
+  geom_point(data = . %>% filter(name == "Norway"), 
+             shape = 21, color = "white", fill = "blue", size = 3) + 
+  ggrepel::geom_text_repel(data = . %>% filter(name == "Norway" & comparison == "USD" & raw_adjusted == "Raw"), 
+                           aes(label = name), size = 3, color = "black") + 
+  
+  scale_fill_grey(start = 0.7, end = 0.8) + 
+  scale_y_continuous(labels = scales::percent_format()) + 
+  coord_flip() + 
+  facet_grid(rows = vars(fct_inorder(raw_adjusted))) + 
+  
+  theme_classic() + 
+  theme(legend.position = "none", 
+        axis.line = element_blank(), 
+        strip.background = element_blank()) + 
+  
+  labs(x = NULL, y = NULL)
+```
+
+#### Area under the curve
+
+Look at the Norwegian trend again, but this time using a different geom highlighting the area under the curve (`geom_area`)
+
+```{r fig.width=4, fig.height=1.5}
+data_tt_norway %>% 
+  ggplot(aes(date, usd_raw)) + 
+  
+  geom_hline(yintercept = 0, color = "grey60") + 
+  geom_area(fill = "grey90") + 
+  geom_line() + 
+  geom_point(data = . %>% filter(usd_raw == max(usd_raw)), color = col_values[1]) + 
+  geom_point(data = . %>% filter(usd_raw == min(usd_raw)), color = col_values[2]) + 
+  
+  scale_y_continuous(labels = scales::percent_format()) + 
+  theme_classic() + 
+  theme(axis.line = element_blank()) + 
+  labs(x = NULL, y = NULL)
+```
+
+A plot like this could be very nice for an HTML table, such as that displayed in the Economist application. Try to do the same with different fill colors. 
+
+```{r fig.width=4, fig.height=1.5}
+data_tt_norway %>% 
+  mutate(value = if_else(usd_raw < 0, true = "under-valued", false = "over-valued")) %>% 
+  
+  ggplot(aes(date, usd_raw)) + 
+  
+  geom_hline(yintercept = 0, color = "grey60") + 
+  geom_area(aes(fill = value)) + 
+  geom_line() + 
+  
+  scale_fill_manual(values = col_values) + 
+  scale_y_continuous(labels = scales::percent_format()) + 
+  theme_classic() + 
+  theme(legend.position = "none", 
+        axis.line = element_blank()) + 
+  labs(x = NULL, y = NULL)
+```
+
+*We see a problem with this strategy*: the fill color changes the grouping of the points so that there are multiple lines drawn, one for those points above zero and one for those below. I tried a number of different solutions to this issue but none resolved the problem. 
+
+It seems I need to *interpolate* new points approximately where the line crosses y = 0. How to do that? [Here is one solution](https://community.rstudio.com/t/plotting-negative-and-positive-laues/29765/2), and [here is another](https://stackoverflow.com/questions/27135962/how-to-fill-geom-polygon-with-different-colors-above-and-below-y-0/27137211#27137211). 
+
+Let's try it out (in slightly modified form from [the Stackoverflow Q&A](https://stackoverflow.com/questions/27135962/how-to-fill-geom-polygon-with-different-colors-above-and-below-y-0/27137211#27137211)): 
+
+```{r fig.width=3, fig.height=2}
+# Example data
+d <- data.frame(
+  x = 1:6,
+  y = c(-1, 2, 1, 2, -1, 1), 
+  group = "original"
+  )
+
+# Sort by x
+d <- d %>% arrange(x)
+
+# Find out where y has crossed zero; that's where the sign has changed from one element to the next
+sign_change <- sign(d$y) != lag(sign(d$y))
+
+# Switch "NA" at position 1 for "FALSE"
+sign_change <- c(FALSE, sign_change[-1])
+
+# Get the indices for elements that are TRUE
+d_indices <- which(sign_change)
+
+# Map over indices and do the interpolation
+new_points <- d_indices %>% 
+  map_dbl(~approx(x = d$y[c(.x - 1, .x)], 
+                  y = d$x[c(.x - 1, .x)], 
+                  xout = 0) %>% pluck("y"))
+
+# Add all to a tibble and update original data frame
+d <- tibble(x = new_points, y = 0, group = "new") %>% 
+  bind_rows(d)
+
+# Plot figure as shown in post
+d %>% 
+  ggplot(aes(x, y)) +
+  geom_area(data = . %>% filter(y <= 0), fill = "red", alpha = 0.2) +
+  geom_area(data = . %>% filter(y >= 0), fill = "blue", alpha = 0.2) +
+  geom_point(aes(color = group))
+```
+
+This could be wrapped in a function so that it's easier to compute for many sets. 
+
+```{r}
+interpolate <- function(data, x, y, x_is_date = TRUE) {
+  
+  # Sort by x so that x and y coordinates are in the same order as they would be in a plot
+  data <- data %>% arrange(x)
+  
+  # Find out where y has crossed zero; that's where the sign has changed from one element to the next
+  sign_change <- sign(data[[y]]) != lag(sign(data[[y]]))
+  
+  # Switch "NA" at position 1 for "FALSE"
+  sign_change <- c(FALSE, sign_change[-1])
+  
+  # Get the indices for elements that are TRUE
+  data_indices <- which(sign_change)
+  
+  # Map over indices and do the interpolation
+  new_points <- data_indices %>% 
+    map_dbl(~approx(x = data[[y]][c(.x - 1, .x)], 
+                    y = data[[x]][c(.x - 1, .x)], 
+                    xout = 0) %>% pluck("y")
+            )
+  
+  # If x was a date, change from numeric back to date
+  if (x_is_date) new_points <- new_points %>% as.Date(origin = "1970-01-01")
+  
+  # Add all to a tibble and update original data frame
+  data <- tibble(!!x := new_points, !!y := 0) %>%
+    bind_rows(data)
+  
+  # Return updated data frame
+  data
+}
+```
+
+Test function against example data again. 
+
+```{r}
+d <- data.frame(
+  time = 1:6,
+  value = c(-1, 2, 1, 2, -1, 1)
+  )
+
+d %>% 
+  interpolate(x = "time", y = "value", x_is_date = FALSE) %>% 
+  ggplot(aes(time, value)) +
+  geom_area(data = . %>% filter(value <= 0), fill = "red", alpha = 0.2) +
+  geom_area(data = . %>% filter(value >= 0), fill = "blue", alpha = 0.2) +
+  geom_point()
+```
+
+Seems to work fine. And now for the real data. 
+
+```{r fig.width=4, fig.height=1.5}
+data_tt_norway %>% 
+  mutate(value = if_else(usd_raw < 0, true = "under-valued", false = "over-valued")) %>% 
+  interpolate(x = "date", y = "usd_raw", x_is_date = TRUE) %>% 
+  
+  ggplot(aes(date, usd_raw)) + 
+  geom_area(data = . %>% filter(usd_raw <= 0), fill = col_values[2]) +
+  geom_area(data = . %>% filter(usd_raw >= 0), fill = col_values[1]) +
+  geom_hline(yintercept = 0, color = "grey60") + 
+  geom_line() + 
+  geom_point(data = . %>% filter(usd_raw == max(usd_raw)), fill = col_values[1], color = "black", shape = 21, size = 2.5) + 
+  geom_point(data = . %>% filter(usd_raw == min(usd_raw)), fill = col_values[2], color = "black", shape = 21, size = 2.5) + 
+  
+  scale_x_date(date_breaks = "3 years", date_labels = "%Y", limits = date_start_end) +
+  scale_y_continuous(labels = scales::percent_format()) + 
+  theme_classic() + 
+  theme(legend.position = "none", 
+        axis.line = element_blank(), 
+        title = element_text(size = 8)) + 
+  labs(x = NULL, y = NULL, title = "Norway")
+```
+
+Alright - it works! We don't need the top and bottom points with the fill color, though. Wrap it all in a function. 
+
+```{r}
+area_plot <- function(data, y, country, y_limits = NULL) {
+  
+  y_char <- deparse(substitute(y))
+  if (is.null(y_limits)) y_limits <- c(min(data[[y_char]], na.rm = TRUE), max(data[[y_char]], na.rm = TRUE))
+  
+  data %>% 
+    interpolate(x = "date", y = y_char, x_is_date = TRUE) %>% 
+    
+    ggplot(aes(date, {{y}})) + 
+    geom_area(data = . %>% filter({{y}} <= 0), fill = col_values[2]) +
+    geom_area(data = . %>% filter({{y}} >= 0), fill = col_values[1]) +
+    geom_hline(yintercept = 0, color = "grey60") + 
+    geom_line() + 
+    
+    scale_x_date(date_breaks = "2 years", date_labels = "%Y", limits = date_start_end) +
+    scale_y_continuous(labels = scales::percent_format(), limits = y_limits) + 
+    theme_void() + 
+    theme(title = element_text(size = 6)) + 
+    labs(x = NULL, y = NULL, title = country)
+}
+```
+
+Test it. 
+
+```{r fig.width=3, fig.height=1}
+data_tt_norway %>% 
+  area_plot(y = usd_raw, country = "Norway")
+```
+
+A few countries have rather recent data points only. Let's highlight only those countries with more than 9 entries. 
+
+```{r message=FALSE}
+many_entries <- data_tt %>% 
+  group_by(name) %>% 
+  summarize(n = n()) %>% 
+  filter(n > 9) %>% 
+  pull(name)
+```
+
+Get the min and max values for all those countries. 
+
+```{r message=FALSE}
+y_range <- data_tt %>% 
+  filter(name %in% many_entries) %>% 
+  group_by(name) %>% 
+  summarize(across(usd_raw, list(min = min, max = max), na.rm = TRUE)) %>% 
+  summarize(min = min(usd_raw_min), max = max(usd_raw_max)) %>% 
+  unlist()
+```
+
+Now run across (almost) all countries. 
+
+```{r}
+all_countries <- data_tt %>% 
+  filter(name %in% many_entries) %>% 
+  group_by(name) %>% 
+  nest() %>% 
+  mutate(
+    
+    # Get the plots
+    area_plots = map2(name, data, 
+                           ~area_plot(.y, y = usd_raw, country = .x, y_limits = y_range)), 
+    
+    # Use the mean value across time as a facet order
+    order = map_dbl(data, ~mean(.x$usd_raw, na.rm = TRUE))
+    )
+```
+
+Plot all countries. 
+
+```{r fig.width=10, fig.height=5}
+all_countries %>% 
+  filter(name != "United States") %>% 
+  arrange(desc(order)) %>% 
+  pull(area_plots) %>% 
+  wrap_plots(ncol = 7)
+```
+
+This is a nice illustration! A bit busy right here, of course, but each panel would suite a cell in an HTML table very nicely. Also, ideally we would like to effectively visualize these graphs for all raw and adjusted comparisons (all countries versus USD, EURO, BGP, JPY and CNY), but this way would be slightly complex here. 
+
+
+## In summary
+
+In summary, we went through a few illustrations from based on the Economist data set and application. 
+
+---

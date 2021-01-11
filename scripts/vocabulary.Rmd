@@ -1,0 +1,165 @@
+---
+title: "Vocabulary"
+subtitle: "Research seminars"
+author: "Jacob J. Christensen"
+date: "`r format(Sys.time(), '%Y-%b-%d')`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+    toc_float: yes
+    code_folding: hide
+    theme: lumen
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	eval = TRUE, 
+  echo = TRUE, 
+  message = TRUE, 
+  warning = FALSE, 
+	fig.align = "center"
+)
+
+# To keep figure, in the specific chunk: 
+# 1. Give it a name, 
+# 2. Adjust width and height, and 
+# 3. And add this to the chunk: opts.label="keep_fig"
+knitr::opts_template$set(
+  keep_fig = list(
+    fig.path = "../results/figures/", 
+    fig.keep = "all", 
+    dpi = 400))
+```
+
+
+In this document I'll go through chapter 4 in *Advanced R* (Wickham H): "Vocabulary". In the words of Hadley: 
+
+> An important part of being fluent in R is having a good working vocabulary. Below, I have listed the functions that I believe consitute such a vocabulary. You don't need to be intimately familiar with the details of every function, but you should at least be aware that they all exist. If there are functions in this list that you've never hear of, I strongly recommend that you read the documentation. 
+
+> I (Hadley) came up with this list by looking through all the functions in the base, stats and utils packages, and extracting those that I think are most useful. The list also includes a few pointers to particularly important functions in other packages, and some of the more important `options()`. 
+
+
+
+## Pre-work
+
+- Load necessary *libraries*, 
+- Set the ggplot2 *theme* to a type that is a bit more publication-ready. 
+
+```{r}
+# Attach libraries and functions
+library(tidyverse)
+
+# Set project theme
+theme_set(theme_minimal() + theme(axis.line = element_line()))
+```
+
+
+
+## The basics
+
+### The first functions to learn
+
+`?`
+`str`
+
+
+### Important operators and assignment
+
+`%in%`, `match`
+`=`, `<-`, `<<-`
+`$`, `[`, `[[`, `head`, `tail`, `subset`
+`with`
+`assign`, `get`
+
+
+### Comparison
+
+`all.equal`, `identical`
+`!=`, `==`, `>`, `>=`, `<`, `<=`
+`is.na`, `complete.cases`
+`is.finite`
+
+
+### Basic math
+
+### Functions to do with functions
+
+### Logical & sets
+
+### Vectors and matrices
+
+### Making vectors
+
+### Lists & data frames
+
+### Control flow
+
+### Apply and friends
+
+## Common data structures
+
+### Date time
+
+### Character manipulation
+
+### Factors
+
+### Array manipulation
+
+## Statistics
+
+### Ordering and tabulating
+
+### Linear models
+
+### Miscellaneous tests
+
+### Random variables
+
+### Matrix algebra
+
+
+## Working with R
+
+### Workspace
+
+### Help
+
+### Debugging
+
+## I/O
+
+### Output
+
+### Reading and writing data
+
+### Files and directories
+
+
+
+
+
+
+
+
+## Conclusions
+
+This concludes the script. Some conclusions and take-homes: 
+
+- 
+- 
+- 
+
+
+
+
+## Session info
+
+To improve reproducibility, print out the session info for this script. 
+
+```{r}
+devtools::session_info()
+```
+

@@ -1,0 +1,238 @@
+---
+title: "Tidytuesday week 2, 2021"
+subtitle: "Research seminars"
+author: "Jacob J. Christensen"
+date: "`r format(Sys.time(), '%Y-%b-%d')`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+    toc_float: yes
+    code_folding: show
+    theme: lumen
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	eval = TRUE, 
+  echo = TRUE, 
+  message = FALSE, 
+  warning = FALSE, 
+	fig.align = "center", 
+	fig.width = 2.3, 
+	fig.height = 2
+)
+
+# To keep figure, in the specific chunk: 
+# 1. Give it a name, 
+# 2. Adjust width and height, and 
+# 3. And add this to the chunk: opts.label="keep_fig"
+knitr::opts_template$set(
+  keep_fig = list(
+    fig.path = "../results/figures/", 
+    fig.keep = "all", 
+    dpi = 400))
+```
+
+
+**Transit Costs Project**
+
+> The data this week comes from [Transit Costs Project](https://transitcosts.com/). 
+
+> Why do transit-infrastructure projects in New York cost 20 times more on a per kilometer basis than in Seoul? We investigate this question across hundreds of transit projects from around the world. We have created a database that spans more than 50 countries and totals more than 11,000 km of urban rail built since the late 1990s. We will also examine this question in greater detail by carrying out six in-depth case studies that take a closer look at unique considerations and variables that aren’t easily quantified, like project management, governance, and site conditions.
+
+> The goal of this work is to figure out how to deliver more high-capacity transit projects for a fraction of the cost in countries like the United States. Additionally, we hope that our site will be a useful resource for elected officials, planners, researchers, journalists, advocates, and others interested in contextualizing transit-infrastructure costs and fighting for better projects.
+
+
+## Pre-work
+
+- Load necessary *libraries*, 
+- Set the ggplot2 *theme* to a type that is a bit more publication-ready. 
+
+```{r}
+# Load libraries
+library(tidyverse)
+library(tidytuesdayR)
+library(rvest)
+library(skimr)
+library(countrycode)
+library(maps)
+library(leaflet)
+library(htmlwidgets)
+
+# Set project theme
+theme_set(theme_minimal() + theme(axis.line = element_line()))
+```
+
+
+## Get data
+
+Start by retrieving the data from [the Tidytuesday repo](https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-01-05). 
+
+```{r}
+tuesdata <- tt_load(2021, week = 2)
+data_transit_cost <- tuesdata$transit_cost %>% 
+  filter(!is.na(country)) %>% 
+  mutate(country = if_else(country == "UK", true = "GB", false = country), 
+         across(ends_with("_year"), as.numeric))
+```
+
+Get the data dictionary too. 
+
+```{r}
+anno_transit_cost <- "https://github.com/rfordatascience/tidytuesday/tree/master/data/2021/2021-01-05/" %>%
+  read_html() %>% 
+  html_nodes("table") %>%
+  html_table() %>% 
+  .[[1]] %>% 
+  select(-class)
+```
+
+These are the available variables. 
+
+```{r}
+anno_transit_cost
+```
+
+## Overview
+
+This is a quick overview of the data set. 
+
+```{r}
+skim(data_transit_cost)
+```
+
+*544* entries and *20* variables, 11 of which are text and 9 of which are numeric. 
+
+
+## Extra information
+
+Let's add the following: 
+
+- Proper country names
+- Other country-level data, such as continent ++
+- Geo codes (to allow plotting cities on a map). 
+
+
+### Country-level data
+
+Add country name, continent, and various regional categories. 
+
+```{r}
+countries_info <- countrycode::codelist_panel %>% 
+  select(year, ecb, country.name.en, continent, eurocontrol_statfor, region, region23) %>% 
+  group_by(ecb) %>% 
+  arrange(desc(year)) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  select(-year)
+
+data_transit_cost <- data_transit_cost %>% 
+  left_join(countries_info, by = c("country" = "ecb")) %>% 
+  filter(!is.na(continent))
+```
+
+
+### Geo codes
+
+Add geo codes. The `maps::world.cities` data frame is slightly old, but probably still useful for this exercise. Check first which cities are missing. 
+
+```{r}
+missing_entries <- data_transit_cost %>% 
+  select(country, city, country.name.en) %>% 
+  anti_join(maps::world.cities, by = c("city" = "name")) %>%
+  distinct() %>% 
+  pull(city)
+
+missing_entries
+```
+
+Okay, so a few missing. Change these cities to their old names. 
+
+```{r}
+data_transit_cost <- data_transit_cost %>% 
+  mutate(city = case_when(
+    city == "Hanoi" ~ "Ha Noi", 
+    city == "Seoul" ~ "Soul", 
+    city == "Mumbai" ~ "Bombay", 
+    city == "Busan" ~ "Pusan", 
+    city == "Panama City" ~ "Panama", 
+    city == "Tel Aviv" ~ "Tel Aviv-Yafo", 
+    city == "Seville" ~ "Sevilla", 
+    city == "Lucerne" ~ "Luzern", 
+    city == "Kyiv" ~ "Kiev", 
+    city == "Xi'an" ~ "Xian", 
+    city == "Jeddah" ~ "Jiddah", 
+    city == "Ad Dammam" ~ "ad-Dammam", 
+    city == "Bahrain" ~ "Manama", 
+    city == "Kuwait City" ~ "al-Kuwayt", 
+    TRUE ~ city
+  ))
+```
+
+Then check which country names that don't match up. 
+
+```{r}
+missing_entries <- data_transit_cost %>% 
+  select(country, city, country.name.en) %>% 
+  anti_join(maps::world.cities, by = c("country.name.en" = "country.etc")) %>%
+  pull(country.name.en) %>% 
+  unique()
+
+missing_entries
+```
+
+Change these to their old names. 
+
+```{r}
+data_transit_cost <- data_transit_cost %>% 
+  mutate(country.name.en = case_when(
+    country.name.en == "United States" ~ "USA", 
+    country.name.en == "Czechia" ~ "Czech Republic", 
+    country.name.en == "United Kingdom" ~ "UK", 
+    country.name.en == "South Korea" ~ "Korea South", 
+    TRUE ~ country.name.en
+  ))
+```
+
+
+Add longitude and latitude for (almost) all cities, and add the English name of the country. 
+
+```{r}
+data_transit_cost <- data_transit_cost %>% 
+  left_join(maps::world.cities, by = c("city" = "name", "country.name.en" = "country.etc"))
+```
+
+
+## `leaflet` map
+
+Let's create [a leaflet map](https://rstudio.github.io/leaflet/) of all transit project sites. 
+
+Then make the leaflet plot and add all bubble plots on top. 
+
+```{r}
+transit_map <- data_transit_cost %>% 
+  leaflet() %>%
+  addProviderTiles(providers$OpenStreetMap) %>%
+  addCircleMarkers(lng = ~long, 
+             lat = ~lat, 
+             popup = ~line,
+             label = ~line, 
+             clusterOptions = markerClusterOptions()
+             )
+
+transit_map
+```
+
+This is very nice for interactive visualization of the worldwide distribution of completed, ongoing and planned transit projects. 
+
+
+## Session info
+
+To improve reproducibility, print out the session info for this script. 
+
+```{r}
+devtools::session_info()
+```
+

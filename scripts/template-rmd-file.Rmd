@@ -1,0 +1,81 @@
+---
+title: "template"
+subtitle: "Research seminars"
+author: "Jacob J. Christensen"
+date: "`r format(Sys.time(), '%Y-%b-%d')`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+    toc_float: yes
+    code_folding: hide
+    theme: lumen
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	eval = TRUE, 
+  echo = TRUE, 
+  message = TRUE, 
+  warning = FALSE, 
+	fig.align = "center"
+)
+
+# To keep figure, in the specific chunk: 
+# 1. Give it a name, 
+# 2. Adjust width and height, and 
+# 3. And add this to the chunk: opts.label="keep_fig"
+knitr::opts_template$set(
+  keep_fig = list(
+    fig.path = "../results/figures/", 
+    fig.keep = "all", 
+    dpi = 400))
+```
+
+
+> This is a template file. There are many like it, but this one is mine. 
+
+
+## Pre-work
+
+- Load necessary *libraries*, 
+- Set the ggplot2 *theme* to a type that is a bit more publication-ready. 
+
+```{r}
+# Load libraries
+library(tidyverse)
+
+# Set project theme
+theme_set(theme_minimal() + theme(axis.line = element_line()))
+```
+
+
+## Topic 1
+
+```{r}
+```
+
+
+
+
+
+## Conclusions
+
+This concludes the script. Some conclusions and take-homes: 
+
+- 
+- 
+- 
+
+
+
+
+## Session info
+
+To improve reproducibility, print out the session info for this script. 
+
+```{r}
+devtools::session_info()
+```
+

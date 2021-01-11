@@ -10,18 +10,25 @@ Work related to R and RStudio will be central, but other aspects  of research ar
 
 ## Documentation
 
+### 2021-01-04
 
-### 2020-06-02
+In the first version of *Advanced R*, Haley Wickham had a chapter on "Vocabulary" which I found interesting. As he writes: 
 
-*Topic*: TBA
+> An important part of being fluent in R is having a good working vocabulary. Below, I have listed the functions that I believe consitute such a vocabulary. You don't need to be intimately familiar with the details of every function, but you should at least be aware that they all exist. If there are functions in this list that you've never hear of, I strongly recommend that you read the documentation. 
+
+> I (Hadley) came up with this list by looking through all the functions in the base, stats and utils packages, and extracting those that I think are most useful. The list also includes a few pointers to particularly important functions in other packages, and some of the more important `options()`. 
+
+I will spend some time getting to know a set of these functions over the next weeks. Although `tidyverse` is king, `base`/`utils`/`stats` are obviously great and important to know about. 
+
+This week I also started tidytuesday week 2 for 2021: **Transit Costs Project**
 
 
-### 2020-05-26
 
-*Topic*: Power calculations in R
+### 2020-12-31
 
-We will go over some simple power calculations in R using the `pwr` package, and discuss the usefulness of *post hoc* power calculations in particular. 
+A note on peer review: this section was recently updated, and we can repeat the session if anyone wants to go through it again in depth. 
 
+This week: tidytuesday week 52: *The Big Mac Index*. 
 
 
 ### 2020-05-19
